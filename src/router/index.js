@@ -3,7 +3,7 @@ import {createRouter, createWebHistory} from 'vue-router'
 // 页面组件（懒加载）
 const SignalAcquisition = () => import('@/views/SignalAcquisition.vue')
 const NotFound = () => import('@/views/NotFoundPage.vue')
-const ApplyPage = () => import('@/views/ApplyPage.vue')
+// const ApplyPage = () => import('@/views/ApplyPage.vue')
 
 const routes = [
     {
@@ -15,12 +15,12 @@ const routes = [
             description: '正在从造父四接收信号...'
         }
     },
-    {
-        path: '/apply',
-        name: 'Apply',
-        component: ApplyPage,
-        meta: {title: '上载观测日志'}
-    },
+    // {
+    //     path: '/apply',
+    //     name: 'Apply',
+    //     component: ApplyPage,
+    //     meta: {title: '上载观测日志'}
+    // },
     // 404 信号丢失（继承原项目风格）
     {
         path: '/:pathMatch(.*)*',

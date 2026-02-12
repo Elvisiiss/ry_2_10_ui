@@ -36,7 +36,7 @@ onMounted(() => {
 </script>
 
 <style lang="scss">
-@use '@/styles/main.scss';
+@use '@/styles/variables' as *;
 
 #app {
   position: relative;

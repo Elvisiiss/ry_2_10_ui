@@ -3,6 +3,8 @@
 // 混合宏 / Mixins
 // ============================================
 
+@use 'variables' as *;
+
 // ---------- 噪声纹理叠加层 ----------
 // 通过伪元素叠加胶片颗粒与CRT扫描线
 @mixin noise-texture($opacity: 0.02, $blend: overlay) {
