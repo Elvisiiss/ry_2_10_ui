@@ -1,0 +1,182 @@
+// ============================================
+// Halcyon 03号观测站 · 信号接收终端
+// 混合宏 / Mixins
+// ============================================
+
+// ---------- 噪声纹理叠加层 ----------
+// 通过伪元素叠加胶片颗粒与CRT扫描线
+@mixin noise-texture($opacity: 0.02, $blend: overlay) {
+  position: relative;
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    background-image: url($texture-grain), url($texture-crt);
+    background-size: 128px 128px, 2px 2px;
+    background-repeat: repeat, repeat;
+    opacity: $opacity;
+    mix-blend-mode: $blend;
+    z-index: $z-index-canvas;
+  }
+}
+
+// ---------- 手绘风格边框 ----------
+// 通过多重阴影模拟手绘的不完美线条
+@mixin handdrawn-border(
+  $color: $handdrawn-border-color,
+  $width: $handdrawn-border-width,
+  $offset: $handdrawn-border-offset,
+  $corner-length: 12px,
+  $has-corners: true
+) {
+  border: none;
+  box-shadow: 0 0 0 $width $color,
+  $offset $offset 0 0 rgba($color, 0.3);
+
+  @if $has-corners {
+    // 添加四个角落的小线段，模拟手绘端点
+    &::before {
+      content: '';
+      position: absolute;
+      top: -$offset;
+      left: -$offset;
+      width: $corner-length;
+      height: $corner-length;
+      border-top: $width solid $color;
+      border-left: $width solid $color;
+    }
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: -$offset;
+      right: -$offset;
+      width: $corner-length;
+      height: $corner-length;
+      border-bottom: $width solid $color;
+      border-right: $width solid $color;
+    }
+  }
+}
+
+// ---------- 脉冲光晕动画 ----------
+@mixin pulse-glow($color: $color-pulse, $duration: $duration-pulse) {
+  animation: pulse-glow-keyframes $duration $ease-pulse infinite;
+
+  @keyframes pulse-glow-keyframes {
+    0% {
+      box-shadow: 0 0 0 0 rgba($color, 0.7), 0 0 0 4px rgba($color, 0.2);
+      opacity: 0.8;
+    }
+    50% {
+      box-shadow: 0 0 20px 8px rgba($color, 0.5), 0 0 0 6px rgba($color, 0.1);
+      opacity: 1;
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba($color, 0.7), 0 0 0 4px rgba($color, 0.2);
+      opacity: 0.8;
+    }
+  }
+}
+
+// ---------- 打字机光标 ----------
+@mixin typing-cursor($color: $color-paper) {
+  border-right: 2px solid $color;
+  animation: blink-cursor 1s step-end infinite;
+
+  @keyframes blink-cursor {
+    0%, 100% {
+      border-color: transparent;
+    }
+    50% {
+      border-color: $color;
+    }
+  }
+}
+
+// ---------- 信号抖动 ----------
+@mixin signal-jitter($intensity: 3px) {
+  animation: jitter 0.2s $ease-shake infinite;
+
+  @keyframes jitter {
+    0%, 100% {
+      transform: translateX(0);
+    }
+    25% {
+      transform: translateX(-$intensity * 0.5);
+    }
+    75% {
+      transform: translateX($intensity * 0.5);
+    }
+  }
+}
+
+// ---------- 机械臂回弹入场 ----------
+@mixin arm-reveal($delay: 0s) {
+  animation: arm-reveal-keyframes $duration-base $ease-out-back $delay both;
+
+  @keyframes arm-reveal-keyframes {
+    0% {
+      opacity: 0;
+      transform: scale(0.8) translateY(20px);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+}
+
+// ---------- 复古凹印效果 (模拟按钮按压) ----------
+@mixin pressed-effect($depth: 1px) {
+  transform: translateY($depth);
+  box-shadow: inset 0 $depth $depth rgba(0, 0, 0, 0.2);
+}
+
+// ---------- 响应式容器 ----------
+@mixin container {
+  width: 100%;
+  max-width: $breakpoint-xl;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: $spacing-4;
+  padding-right: $spacing-4;
+}
+
+// ---------- 反对称布局辅助 ----------
+// 将元素放置在黄金分割点附近
+@mixin off-center($anchor: left, $ratio: 0.618) {
+  position: absolute;
+  @if $anchor == left {
+    left: percentage($ratio);
+    transform: translateX(-50%);
+  } @else if $anchor == right {
+    right: percentage($ratio);
+    transform: translateX(50%);
+  }
+}
+
+// ---------- 手绘SVG包装 ----------
+// 用于给内嵌SVG添加统一的手绘滤镜效果
+@mixin handdrawn-svg {
+  filter: drop-shadow(1px 1px 0 rgba($color-paper, 0.2));
+  path, circle, line, rect {
+    vector-effect: non-scaling-stroke;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+}
+
+// ---------- 爆豆声/黑胶底噪装饰 ----------
+// 模拟黑胶唱片的随机爆点，使用径向渐变
+@mixin vinyl-crackle($count: 20) {
+  background-image: radial-gradient(circle at 20% 30%, rgba($color-paper, 0.1) 1px, transparent 1px),
+  radial-gradient(circle at 80% 70%, rgba($color-paper, 0.1) 1px, transparent 1px),
+  radial-gradient(circle at 45% 85%, rgba($color-paper, 0.08) 1px, transparent 1px),
+  radial-gradient(circle at 63% 12%, rgba($color-paper, 0.12) 1px, transparent 1px);
+  // 实际使用时应循环生成多个随机位置，此处简写示意
+}

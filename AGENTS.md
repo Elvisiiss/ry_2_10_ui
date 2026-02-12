@@ -150,7 +150,7 @@ halcyon-recruitment/
 │   │   ├── useAudioContext.ts      # Web Audio 合成滴答声
 │   │   └── useScrollLock.ts        # 答题阶段锁定滚动？
 │   ├── router/
-│   │   └── index.ts               # 仅单页，但保留路由便于扩展
+│   │   └── index.js               # 仅单页，但保留路由便于扩展
 │   ├── stores/
 │   │   └── signal.ts              # Pinia：记录答题状态、锁定状态
 │   ├── styles/
@@ -162,9 +162,10 @@ halcyon-recruitment/
 │   │   ├── drawingUtils.ts        # 生成手绘路径、干扰线
 │   │   └── wavelength.ts          # 答题匹配算法（轻量）
 │   ├── views/
+│   │   ├── NotFoundPage.vue       # 未找到页面
 │   │   └── SignalAcquisition.vue  # 唯一页面：信号接收终端
 │   ├── App.vue
-│   └── main.ts
+│   └── main.js
 ├── index.html
 ├── package.json
 ├── vite.config.ts

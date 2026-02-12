@@ -1,85 +1,65 @@
-<script setup>
-import { RouterLink, RouterView } from 'vue-router'
-import HelloWorld from './components/HelloWorld.vue'
-</script>
-
 <template>
-  <header>
-    <img alt="Vue logo" class="logo" src="@/assets/logo.svg" width="125" height="125" />
+  <div id="app" class="halcyon-observatory">
+    <!-- 全局噪声画布背景，带 CRT 扫描线与胶片颗粒 -->
+    <AppCanvas/>
 
-    <div class="wrapper">
-      <HelloWorld msg="You did it!" />
+    <!-- 路由视图：信号接收终端、申请页、404等 -->
+    <router-view v-slot="{ Component }">
+      <transition name="fade-signal" mode="out-in">
+        <component :is="Component"/>
+      </transition>
+    </router-view>
 
-      <nav>
-        <RouterLink to="/">Home</RouterLink>
-        <RouterLink to="/about">About</RouterLink>
-      </nav>
-    </div>
-  </header>
-
-  <RouterView />
+    <!-- 天文钟彩蛋区域（全局底部，404页面不显示） -->
+    <EasterEgg v-if="$route.name !== 'NotFound'"/>
+  </div>
 </template>
 
-<style scoped>
-header {
-  line-height: 1.5;
-  max-height: 100vh;
-}
+<script setup lang="ts">
+import {onMounted} from 'vue'
+import {useSignalStore} from '@/stores/signal'
+import {useAudioContext} from '@/composables/useAudioContext'
+import AppCanvas from '@/components/core/AppCanvas.vue'
+import EasterEgg from '@/components/modules/EasterEgg.vue'
 
-.logo {
-  display: block;
-  margin: 0 auto 2rem;
-}
+// 初始化 Pinia store
+const signalStore = useSignalStore()
 
-nav {
+// 初始化音频上下文（不自动激活，等待用户手势）
+const {initContext} = useAudioContext()
+onMounted(() => {
+  initContext()
+  // 标记 JS 已启用，可用于样式降级
+  document.documentElement.classList.add('js-enabled')
+  // 预加载字体等（可选）
+})
+</script>
+
+<style lang="scss">
+@use '@/styles/main.scss';
+
+#app {
+  position: relative;
+  min-height: 100vh;
   width: 100%;
-  font-size: 12px;
-  text-align: center;
-  margin-top: 2rem;
+  color: $color-paper; // 来自全局变量
+  background-color: $color-void;
+  overflow-x: hidden; // 防止滚动视差溢出
 }
 
-nav a.router-link-exact-active {
-  color: var(--color-text);
+// 页面切换淡入淡出，使用 LUX 机械臂缓动
+.fade-signal-enter-active,
+.fade-signal-leave-active {
+  transition: opacity 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-nav a.router-link-exact-active:hover {
-  background-color: transparent;
+.fade-signal-enter-from,
+.fade-signal-leave-to {
+  opacity: 0;
 }
 
-nav a {
-  display: inline-block;
-  padding: 0 1rem;
-  border-left: 1px solid var(--color-border);
-}
-
-nav a:first-of-type {
-  border: 0;
-}
-
-@media (min-width: 1024px) {
-  header {
-    display: flex;
-    place-items: center;
-    padding-right: calc(var(--section-gap) / 2);
-  }
-
-  .logo {
-    margin: 0 2rem 0 0;
-  }
-
-  header .wrapper {
-    display: flex;
-    place-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  nav {
-    text-align: left;
-    margin-left: -1rem;
-    font-size: 1rem;
-
-    padding: 1rem 0;
-    margin-top: 1rem;
-  }
+// 确保路由视图容器占满
+.router-view-container {
+  min-height: 100vh;
 }
 </style>

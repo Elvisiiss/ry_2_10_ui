@@ -1,0 +1,228 @@
+// ============================================
+// Halcyon 03号观测站 · 信号接收终端
+// 全局重置与基础样式
+// ============================================
+
+@use 'variables' as *;
+@use 'mixins' as *;
+
+// ---------- 重置 ----------
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: $color-void;
+  color: $color-paper;
+  font-family: $font-body;
+  font-size: $font-size-base;
+  line-height: $line-height-base;
+  min-height: 100vh;
+  position: relative;
+
+  // 全局噪声纹理
+  @include noise-texture(0.025, overlay);
+
+  // 禁止文本选择，营造“界面”感，但保留对内容的可选
+  user-select: none;
+
+  // 允许对部分文案进行选择，通过特定类恢复
+  &.selectable, .selectable {
+    user-select: text;
+  }
+}
+
+// ---------- 排版基础 ----------
+h1, h2, h3, h4, h5, h6 {
+  font-family: $font-signal;
+  font-weight: $font-weight-medium;
+  line-height: $line-height-tight;
+  letter-spacing: -0.01em;
+  margin-bottom: $spacing-4;
+}
+
+h1 {
+  font-size: $font-size-3xl;
+
+  @media (max-width: $breakpoint-md) {
+    font-size: $font-size-2xl;
+  }
+}
+
+h2 {
+  font-size: $font-size-2xl;
+}
+
+h3 {
+  font-size: $font-size-xl;
+}
+
+h4 {
+  font-size: $font-size-lg;
+}
+
+p {
+  margin-bottom: $spacing-4;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+// ---------- 链接 ----------
+a {
+  color: $color-pulse;
+  text-decoration: none;
+  border-bottom: 1px dashed rgba($color-pulse, 0.4);
+  transition: $transition-default;
+
+  &:hover {
+    color: lighten($color-pulse, 10%);
+    border-bottom-style: solid;
+    border-bottom-color: $color-pulse;
+  }
+}
+
+// ---------- 等宽数据文本 ----------
+code, pre, .mono {
+  font-family: $font-mono;
+  font-size: 0.9em;
+  background-color: rgba($color-dust, 0.5);
+  padding: 0.2em 0.4em;
+  border-radius: 0;
+  color: $color-signal;
+}
+
+pre {
+  padding: $spacing-4;
+  border-left: 3px solid $color-pulse;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+// ---------- 手写注释 ----------
+.handwritten {
+  font-family: $font-hand;
+  font-size: $font-size-sm;
+  color: $color-mist;
+  letter-spacing: 0.02em;
+  font-style: italic;
+}
+
+// ---------- 信号文本（打字机效果容器） ----------
+.signal-text {
+  font-family: $font-mono;
+  font-size: $font-size-lg;
+  line-height: $line-height-loose;
+  border-right: 2px solid $color-pulse;
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: inline;
+
+  &.typing {
+    @include typing-cursor($color-pulse);
+  }
+}
+
+// ---------- 按钮基础样式（被 ObsButton 具体化） ----------
+button {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+
+  &:focus-visible {
+    outline: 2px solid $color-pulse;
+    outline-offset: 2px;
+  }
+}
+
+// ---------- 工具类 ----------
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+.container {
+  @include container;
+}
+
+// 大留白区块
+.section {
+  padding-top: $spacing-16;
+  padding-bottom: $spacing-16;
+}
+
+.section-compact {
+  padding-top: $spacing-8;
+  padding-bottom: $spacing-8;
+}
+
+// ---------- 脉冲光动画（直接绑定类） ----------
+.pulse {
+  @include pulse-glow;
+}
+
+// ---------- 手绘边框快捷类 ----------
+.handdrawn {
+  position: relative;
+  @include handdrawn-border;
+}
+
+// ---------- 模拟黑胶爆豆声 ----------
+.crackle {
+  @include vinyl-crackle;
+}
+
+// ---------- 滚动条样式（Webkit） ----------
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: $color-dust;
+}
+
+::-webkit-scrollbar-thumb {
+  background: $color-mist;
+  border-radius: 0;
+
+  &:hover {
+    background: $color-pulse;
+  }
+}
+
+// ---------- 选中样式 ----------
+::selection {
+  background: rgba($color-pulse, 0.3);
+  color: $color-paper;
+}
+
+::-moz-selection {
+  background: rgba($color-pulse, 0.3);
+  color: $color-paper;
+}
