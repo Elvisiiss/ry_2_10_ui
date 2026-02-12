@@ -1,0 +1,151 @@
+@import 'variables';
+@import 'mixins';
+
+// 招聘页面全局样式
+.recruitment-page {
+  background-color: $color-void;
+  color: $color-paper;
+  min-height: 100vh;
+  @include noise-overlay(0.03, #fff);
+  font-family: $font-serif;
+  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  box-sizing: border-box;
+
+  // 所有卡片统一基底
+  .obs-card {
+    background-color: $color-dust;
+    @include noise-overlay(0.02, #000);
+    padding: 2rem;
+    border-radius: 4px;
+    @include obs-shadow(1);
+    max-width: 720px;
+    width: 100%;
+    margin: 1rem;
+    position: relative;
+  }
+
+  // 手绘标题
+  .hand-title {
+    font-family: $font-hand;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: $color-paper;
+  }
+
+  // 信号橙色强调
+  .signal {
+    color: $color-signal;
+  }
+
+  // 等宽数据文字
+  .mono {
+    font-family: $font-mono;
+    font-size: 0.9em;
+  }
+
+  // 打字机效果容器
+  .typewriter {
+    overflow: hidden;
+    white-space: nowrap;
+    animation: typing 2s steps(30, end);
+    @include typewriter-cursor;
+  }
+
+  @keyframes typing {
+    from {
+      width: 0;
+    }
+    to {
+      width: 100%;
+    }
+  }
+
+  // 按钮风格
+  .obs-button {
+    font-family: $font-hand;
+    font-size: 1.25rem;
+    padding: 0.75rem 2rem;
+    background: transparent;
+    color: $color-mist;
+    border: 2px dashed $color-mist;
+    transition: all 0.3s $ease-arm-extend;
+    cursor: pointer;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    &:hover {
+      background: rgba($color-heartbeat, 0.08);
+      border-color: $color-heartbeat;
+      color: $color-paper;
+    }
+
+    &:active {
+      transform: translateY(1px);
+    }
+  }
+
+  // 光点脉冲动画
+  .pulse-dot {
+    width: 16px;
+    height: 16px;
+    background: $color-paper;
+    border-radius: 50%;
+    filter: blur(1px);
+    animation: pulse 2.4s $ease-pulse infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 0.6;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  // 手绘单选按钮
+  .hand-radio {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+
+    .radio-custom {
+      width: 18px;
+      height: 18px;
+      border: 1.5px solid $color-mist;
+      border-radius: 50%;
+      margin-right: 10px;
+      position: relative;
+
+      &::after {
+        content: '';
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 10px;
+        height: 10px;
+        background: $color-heartbeat;
+        border-radius: 50%;
+        opacity: 0;
+        transform: scale(0);
+        transition: all 0.2s $ease-arm-extend;
+      }
+    }
+
+    input[type="radio"] {
+      display: none;
+
+      &:checked + .radio-custom::after {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+  }
+}

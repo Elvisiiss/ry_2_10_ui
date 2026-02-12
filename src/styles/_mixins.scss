@@ -1,0 +1,98 @@
+// ---------- 噪声纹理（纯CSS）----------
+@mixin noise-overlay($opacity: 0.03, $color: #fff) {
+  position: relative;
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    background-image: repeating-radial-gradient(
+                    circle at 20% 30%,
+                    rgba($color, 0.1) 0px,
+                    transparent 1px,
+                    transparent 2px
+    ),
+    repeating-radial-gradient(
+                    circle at 80% 70%,
+                    rgba($color, 0.08) 0px,
+                    transparent 2px,
+                    transparent 3px
+    );
+    background-size: 4px 4px, 6px 6px;
+    opacity: $opacity;
+    mix-blend-mode: overlay;
+  }
+}
+
+// ---------- 手绘边框（断续线）----------
+@mixin handdrawn-border($color: $color-paper, $width: 2px, $dash: 6 4) {
+  border: none;
+  outline: none;
+  background: transparent;
+  position: relative;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border: $width solid $color;
+    border-radius: inherit;
+    stroke-dasharray: $dash;
+    opacity: 0.8;
+    pointer-events: none;
+  }
+}
+
+// ---------- 手绘下划线（波浪线）----------
+@mixin handdrawn-underline($color: $color-heartbeat, $width: 1px) {
+  text-decoration: none;
+  position: relative;
+
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 100%;
+    height: $width * 2;
+    background: repeating-linear-gradient(
+                    45deg,
+                    $color,
+                    $color 2px,
+                    transparent 2px,
+                    transparent 6px
+    );
+    opacity: 0.7;
+  }
+}
+
+// ---------- 卡片阴影（景深）----------
+@mixin obs-shadow($depth: 1) {
+  @if $depth == 1 {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  } @else if $depth == 2 {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+}
+
+// ---------- 打字机光标----------
+@mixin typewriter-cursor($color: $color-heartbeat) {
+  border-right: 2px solid $color;
+  animation: blink-cursor 1s step-end infinite;
+
+  @keyframes blink-cursor {
+    from, to {
+      border-color: transparent;
+    }
+    50% {
+      border-color: $color;
+    }
+  }
+}
