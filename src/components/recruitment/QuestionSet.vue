@@ -189,8 +189,9 @@ let autoTimer = null;
 let countdownInterval = null;
 let timerStartIndex = null;
 
-// ---------- 打字机定时器句柄（修复双重显示核心）----------
+// ---------- 打字机定时器句柄 + 当前题目索引记录（修复双重显示核心）----------
 const typewriterInterval = ref(null);
+const typingQuestionIndex = ref(null); // 记录启动打字机时的题目索引
 
 // 清除所有定时器（组件卸载或离开题目时强制清理）
 const clearAutoTimer = () => {
@@ -207,13 +208,15 @@ const clearAutoTimer = () => {
   timerStartIndex = null;
 };
 
-// 清除打字机定时器（防止残留）
+// 清除打字机定时器（先置空标志，再清除定时器，彻底防止残留回调）
 const clearTypewriter = () => {
   if (typewriterInterval.value) {
-    clearInterval(typewriterInterval.value);
-    typewriterInterval.value = null;
+    const timer = typewriterInterval.value;
+    typewriterInterval.value = null;   // 立即置空，已调度的回调会检测到并退出
+    clearInterval(timer);
   }
   isTyping.value = false;
+  typingQuestionIndex.value = null;    // 清空索引记录
 };
 
 // 启动自动跳转（仅在点评完全显示后调用一次）
@@ -256,13 +259,12 @@ const skipAutoAndNext = () => {
 
 // ---------- 切换题目时重置状态（并清除所有残留定时器）----------
 watch(currentQuestionIndex, async (newIdx, oldIdx) => {
-  // 🔧 强制清除打字机定时器，杜绝向新题追加旧字符
-  clearTypewriter();
+  clearTypewriter();   // 强制终结打字机，防止跨题残留
   clearAutoTimer();
 
   localAnswered.value = false;
   rippleIndex.value = null;
-  isTyping.value = false;      // 二次确保
+  isTyping.value = false;
   isNavigating.value = false;
 
   const saved = answers.value[newIdx];
@@ -282,7 +284,6 @@ const onSelect = async (idx) => {
   if (isAnswered.value || localAnswered.value || isTyping.value || isAutoTimerActive.value || isNavigating.value) return;
   if (selectedOption.value !== null) return;
 
-  // 🔧 清除可能残留的自动定时器和打字机定时器
   clearAutoTimer();
   clearTypewriter();
 
@@ -306,21 +307,28 @@ const onSelect = async (idx) => {
   }
 };
 
-// 🔧 重构打字机：使用可控定时器句柄，防止重叠
+// 🔧 重构打字机：记录启动时的题目索引，回调中严格校验，杜绝跨题残留
 const typeWriter = (text) => {
   return new Promise((resolve) => {
-    clearTypewriter();                     // 清除旧定时器
+    clearTypewriter();                     // 清除旧定时器，并重置标志
     isTyping.value = true;
     displayComment.value = '';            // 清空容器
+    typingQuestionIndex.value = currentQuestionIndex.value; // 记录当前题目索引
 
     const chars = text.split('');
     let i = 0;
     typewriterInterval.value = setInterval(() => {
+      // 关键防御：如果定时器已被清除，或题目索引已变化，立即停止
+      if (!typewriterInterval.value || typingQuestionIndex.value !== currentQuestionIndex.value) {
+        clearTypewriter();
+        resolve();
+        return;
+      }
       if (i < chars.length) {
         displayComment.value += chars[i];
         i++;
       } else {
-        clearTypewriter();               // 完成后清理自身
+        clearTypewriter();
         resolve();
       }
     }, 40);
@@ -329,12 +337,12 @@ const typeWriter = (text) => {
 
 // ---------- 导航方法（强制步长=1，禁用 store.nextQuestion）----------
 const goToNext = () => {
-  if (isNavigating.value || isLastQuestion.value) return;
+  // 增加 selectedOption 校验，防止无答案时误跳转
+  if (isNavigating.value || isLastQuestion.value || selectedOption.value === null) return;
   isNavigating.value = true;
   clearAutoTimer();
   clearTypewriter();      // 离开时也终止打字机
 
-  // 🔧 直接操作索引，保证每次只前进1
   if (currentQuestionIndex.value < 4) {
     store.currentQuestionIndex++;
   }
@@ -439,7 +447,6 @@ $bp-mobile: 768px !default;
   padding: 2.5rem;
   transition: box-shadow 0.3s $ease-drawer;
   overflow: hidden;
-  // 🔧 固定卡片横长：继承父容器宽度，确保绝对定位时不收缩
   width: 100%;
   box-sizing: border-box;
 
@@ -476,7 +483,6 @@ $bp-mobile: 768px !default;
 .question-set {
   width: 100%;
   max-width: 820px;
-  // 🔧 固定横长：桌面安全区宽度下限，移动端取消
   min-width: 600px;
   margin: 0 auto;
   opacity: 0;
@@ -492,7 +498,7 @@ $bp-mobile: 768px !default;
   }
 
   @media (max-width: $bp-mobile) {
-    min-width: auto; // 移动端无需下限，由父容器弹性决定
+    min-width: auto;
     padding: 0 12px;
   }
 }
@@ -821,7 +827,7 @@ $bp-mobile: 768px !default;
 .wipe-enter-active,
 .wipe-leave-active {
   transition: clip-path 1s $ease-drawer, opacity 0.8s $ease-drawer;
-  position: absolute !important; // 强制脱离文档流，与父容器相对定位配合
+  position: absolute !important;
   width: 100%;
 }
 
@@ -841,7 +847,6 @@ $bp-mobile: 768px !default;
   opacity: 1;
 }
 
-// 卡片本身不再设置 position，由过渡类接管
 .question-card {
   // 无 position 设置，由 .wipe-* 中的 absolute 控制
 }
