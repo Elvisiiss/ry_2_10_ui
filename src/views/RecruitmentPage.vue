@@ -37,7 +37,7 @@
 
     <!-- 彩蛋触发提示 + 故障闪烁层 -->
     <transition name="glitch-slide">
-      <div v-if="easter.triggered" class="easter-message mono">
+      <div v-if="!easter.triggered" class="easter-message mono">
         > resolve states via physical interference...
       </div>
     </transition>

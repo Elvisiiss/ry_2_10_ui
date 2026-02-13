@@ -1,69 +1,73 @@
 <template>
   <div class="question-set" :class="{ 'page-enter': isPageEntered }">
-    <!-- 进度指示（带手绘纹理） -->
+    <!-- 进度条（蚀刻细线） -->
     <div class="progress">
       <span class="mono label">校准进度</span>
       <div class="bar">
         <div class="fill" :style="{ width: progressWidth + '%' }"></div>
       </div>
-      <span class="counter mono">{{ currentIndex + 1 }} / 5</span>
+      <span class="counter mono">{{ currentQuestionIndex + 1 }} / 5</span>
     </div>
 
-    <!-- 擦除转场：题目卡片 -->
+    <!-- ========== 擦除转场：每道题独立卡片 ========== -->
     <transition :name="transitionName" mode="out-in" @before-leave="beforeLeave" @after-enter="afterEnter">
-      <div v-if="currentQuestion" :key="currentIndex" class="obs-card question-card">
+      <div v-if="currentQuestion" :key="'card-' + currentQuestionIndex" class="obs-card question-card">
+        <!-- 卡片头部 -->
         <div class="question-header">
           <span class="question-number mono">{{ formattedIndex }}</span>
           <h3 class="hand-title">{{ currentQuestion.title }}</h3>
         </div>
 
-        <!-- 选项区（手绘单选） -->
+        <!-- 选项区（手绘单选 + 波纹反馈） -->
         <div class="options">
           <label
               v-for="(opt, idx) in currentQuestion.options"
               :key="idx"
               class="hand-radio"
-              :class="{ disabled: isAnswered, selected: selectedOption === idx }"
+              :class="{
+              disabled: isAnswered || localAnswered,
+              selected: selectedOption === idx,
+              'ripple-active': rippleIndex === idx
+            }"
+              @click="onSelect(idx)"
           >
             <input
                 type="radio"
-                :name="'q' + currentIndex"
+                :name="'q' + currentQuestionIndex"
                 :value="idx"
                 v-model="selectedOption"
-                @change="onSelect(idx)"
-                :disabled="isAnswered"
+                :disabled="isAnswered || localAnswered"
             />
             <span class="radio-custom"></span>
             <span class="option-text">{{ opt }}</span>
           </label>
         </div>
 
-        <!-- 点评区：选择后显示，带打字机动画 -->
+        <!-- ===== 点评区：必现，打字机 ===== -->
         <div v-if="selectedOption !== null" class="comment-wrapper">
+          <div class="comment-marker">✧ 观测笔记</div>
           <div ref="commentRef" class="comment typewriter" :class="{ typing: isTyping }">
             {{ displayComment }}
           </div>
         </div>
 
-        <!-- 导航控制区（手绘按钮组） -->
+        <!-- ===== 导航控制区 ===== -->
         <div v-if="selectedOption !== null" class="nav-actions">
-          <button
-              v-if="currentIndex > 0"
-              class="obs-button prev-btn"
-              @click="goToPrev"
-              :disabled="isAutoTimerActive"
-          >
+          <!-- 上一题 -->
+          <button v-if="currentQuestionIndex > 0" class="obs-button prev-btn" @click="goToPrev">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <path d="M15 18l-6-6 6-6"/>
             </svg>
             上一题
           </button>
 
-          <div class="auto-hint" v-if="!isLastQuestion && !isAutoTimerActive">
+          <!-- 自动跳转倒计时（仅当自动跳转激活） -->
+          <div v-if="!isLastQuestion && isAutoTimerActive" class="auto-hint">
             <span class="dot-pulse"></span>
-            <span class="mono">2秒后自动校准</span>
+            <span class="mono">校准倒计时 {{ countdown }}s</span>
           </div>
 
+          <!-- 立即继续 / 跳过等待 -->
           <button
               v-if="!isLastQuestion"
               class="obs-button skip-btn"
@@ -76,10 +80,15 @@
             {{ isAutoTimerActive ? '立即继续' : '继续校准' }}
           </button>
 
+          <!-- 最后一题：完成按钮 -->
           <button v-else class="obs-button finish-btn" @click="finishQuiz">
             完成校准
           </button>
         </div>
+
+        <!-- 纸张磨损装饰 -->
+        <div class="paper-tear-top"></div>
+        <div class="paper-tear-bottom"></div>
       </div>
     </transition>
   </div>
@@ -88,23 +97,22 @@
 <script setup>
 import {computed, nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import {storeToRefs} from 'pinia';
-import {useCalibrationStore} from '../../stores/calibration';
-import {useAudio} from '../../composables/useAudio';
+import {useCalibrationStore} from '@/stores/calibration.js';
+import {useAudio} from '@/composables/useAudio.js';
 
 const store = useCalibrationStore();
 const {playSound} = useAudio();
 const {currentQuestionIndex, answers} = storeToRefs(store);
 
-// ---------- 页面开始动画（手绘渐显）----------
+// ---------- 页面入场动画 ----------
 const isPageEntered = ref(false);
 onMounted(() => {
-  // 延迟一帧触发，让CSS动画生效
   requestAnimationFrame(() => {
     isPageEntered.value = true;
   });
 });
 
-// ---------- 题目数据（与AGENTS.md完全一致）----------
+// ---------- 题目数据（与AGENTS.md一致）----------
 const questions = [
   {
     title: '当我们在游戏里仰望距离地球 880 光年的 delta Cephei（造父四）时，我们看到的其实是？',
@@ -160,169 +168,301 @@ const questions = [
 
 const currentQuestion = computed(() => questions[currentQuestionIndex.value]);
 const formattedIndex = computed(() => (currentQuestionIndex.value + 1).toString().padStart(2, '0'));
-const progressWidth = computed(() => ((currentQuestionIndex.value) / 5) * 100);
+const progressWidth = computed(() => (currentQuestionIndex.value / 5) * 100);
 const isLastQuestion = computed(() => currentQuestionIndex.value === 4);
 
-// ---------- 选中状态与自动跳转定时器 ----------
+// ---------- 交互状态 ----------
 const selectedOption = ref(null);
 const isAnswered = computed(() => answers.value[currentQuestionIndex.value] !== null);
-const isAutoTimerActive = ref(false);
-let autoTimer = null;
-
-// 当前显示的评论（用于打字机逐字显示）
 const displayComment = ref('');
-const commentRef = ref(null);
 const isTyping = ref(false);
+const rippleIndex = ref(null);
+const localAnswered = ref(false); // 本地锁，防止重复点击
 
-// 切换题目时重置状态并恢复已选答案
-watch(currentQuestionIndex, async () => {
-  // 清除之前的定时器
-  clearAutoTimer();
-  // 恢复答案
-  const saved = answers.value[currentQuestionIndex.value];
-  selectedOption.value = saved !== null ? saved : null;
-  displayComment.value = '';
-  isTyping.value = false;
-  // 如果该题已经答过，直接显示完整评论
-  if (saved !== null) {
-    await nextTick();
-    displayComment.value = currentQuestion.value.comments[saved];
-  }
-}, {immediate: true});
+// ---------- 导航锁，防止重复跳转 ----------
+const isNavigating = ref(false);
 
-// ---------- 选项选择 ----------
-const onSelect = async (idx) => {
-  if (isAnswered.value) return;
-  selectedOption.value = idx;
-  store.selectAnswer(currentQuestionIndex.value, idx);
-  await playSound('select', 0.2);
+// ---------- 自动跳转定时器（完全受控）----------
+const isAutoTimerActive = ref(false);
+const countdown = ref(2);
+let autoTimer = null;
+let countdownInterval = null;
+// 存储启动定时器时的题目索引，用于防止过时跳转
+let timerStartIndex = null;
 
-  // 显示评论（打字机效果）
-  const fullComment = currentQuestion.value.comments[idx];
-  await typeWriter(fullComment);
-
-  // 如果不是最后一题，启动2秒自动跳转
-  if (!isLastQuestion.value) {
-    startAutoNext();
-  }
-};
-
-// 打字机逐字动画（手绘风格，非等宽但保留节奏）
-const typeWriter = async (text) => {
-  isTyping.value = true;
-  displayComment.value = '';
-  const chars = text.split('');
-  for (let i = 0; i < chars.length; i++) {
-    await new Promise(resolve => setTimeout(resolve, 40)); // 每字40ms，模拟手写感
-    displayComment.value += chars[i];
-  }
-  isTyping.value = false;
-};
-
-// ---------- 自动跳转定时器 ----------
-const startAutoNext = () => {
-  clearAutoTimer();
-  isAutoTimerActive.value = true;
-  autoTimer = setTimeout(() => {
-    if (!isLastQuestion.value && selectedOption.value !== null) {
-      goToNext();
-    }
-    isAutoTimerActive.value = false;
-  }, 2000);
-};
-
+// 清除所有定时器（组件卸载或离开题目时强制清理）
 const clearAutoTimer = () => {
   if (autoTimer) {
     clearTimeout(autoTimer);
     autoTimer = null;
   }
+  if (countdownInterval) {
+    clearInterval(countdownInterval);
+    countdownInterval = null;
+  }
   isAutoTimerActive.value = false;
+  countdown.value = 2;
+  timerStartIndex = null;
+};
+
+// 启动自动跳转（仅在点评完全显示后调用一次）
+const startAutoNext = () => {
+  if (isLastQuestion.value) return;
+  clearAutoTimer(); // 确保没有残留定时器
+  isAutoTimerActive.value = true;
+  countdown.value = 2;
+  timerStartIndex = currentQuestionIndex.value; // 记录当前索引
+
+  countdownInterval = setInterval(() => {
+    countdown.value -= 1;
+    if (countdown.value <= 0) {
+      clearInterval(countdownInterval);
+      countdown.value = 0;
+    }
+  }, 1000);
+
+  autoTimer = setTimeout(() => {
+    // 只有当前索引与启动时一致，且没有正在导航，且不是最后一题，才执行跳转
+    if (
+        !isLastQuestion.value &&
+        selectedOption.value !== null &&
+        currentQuestionIndex.value === timerStartIndex &&
+        !isNavigating.value
+    ) {
+      goToNext();
+    }
+    clearAutoTimer(); // 跳转后清理（或条件不满足时清理）
+  }, 2000);
 };
 
 // 跳过等待，立即下一题
 const skipAutoAndNext = () => {
+  if (isNavigating.value || isLastQuestion.value) return;
   clearAutoTimer();
   if (!isLastQuestion.value && selectedOption.value !== null) {
     goToNext();
   }
 };
 
-// ---------- 导航方法 ----------
-const goToNext = () => {
-  clearAutoTimer();
-  store.nextQuestion();
-};
+// ---------- 切换题目时重置状态（不自动启动任何定时器）----------
+watch(currentQuestionIndex, async (newIdx, oldIdx) => {
+  clearAutoTimer();               // 离开旧题时强制清除定时器
+  localAnswered.value = false;    // 重置本地锁
+  rippleIndex.value = null;
+  isTyping.value = false;
+  isNavigating.value = false;    // 重置导航锁
 
-const goToPrev = () => {
+  // 恢复已选答案（如果有）
+  const saved = answers.value[newIdx];
+  selectedOption.value = saved !== null ? saved : null;
+  displayComment.value = '';
+
+  if (saved !== null) {
+    // 已答题：直接显示完整评论，不自动跳转
+    await nextTick();
+    displayComment.value = currentQuestion.value.comments[saved];
+    localAnswered.value = true;   // 标记本地已答
+  }
+}, {immediate: true});
+
+// ---------- 选项选择：严格的防重复锁 ----------
+const onSelect = async (idx) => {
+  // 禁止：已答过、本地已锁、正在打字、自动跳转激活时、正在导航
+  if (isAnswered.value || localAnswered.value || isTyping.value || isAutoTimerActive.value || isNavigating.value) return;
+  if (selectedOption.value !== null) return; // 已经选过
+
+  // 立即清除可能残留的旧定时器，确保全新选择
   clearAutoTimer();
-  if (currentQuestionIndex.value > 0) {
-    // 直接修改store的索引（兼容原有store）
-    store.currentQuestionIndex--;
-    // 播放轻微翻页音效（可选）
-    playSound('select', 0.1);
+
+  // 波纹反馈
+  rippleIndex.value = idx;
+  setTimeout(() => {
+    rippleIndex.value = null;
+  }, 300);
+
+  // 锁定，防止重复触发
+  localAnswered.value = true;
+  selectedOption.value = idx;
+  store.selectAnswer(currentQuestionIndex.value, idx);
+  await playSound('select', 0.2);
+
+  // 打字机显示完整点评
+  const fullComment = currentQuestion.value.comments[idx];
+  await typeWriter(fullComment);
+
+  // 点评结束后，自动跳转（仅非最后一题）
+  if (!isLastQuestion.value) {
+    startAutoNext();
   }
 };
 
+// 打字机逐字动画（40ms/字）
+const typeWriter = (text) => {
+  return new Promise((resolve) => {
+    isTyping.value = true;
+    displayComment.value = '';
+    const chars = text.split('');
+    let i = 0;
+    const interval = setInterval(() => {
+      if (i < chars.length) {
+        displayComment.value += chars[i];
+        i++;
+      } else {
+        clearInterval(interval);
+        isTyping.value = false;
+        resolve();
+      }
+    }, 40);
+  });
+};
+
+// ---------- 导航方法 ----------
+const goToNext = () => {
+  if (isNavigating.value || isLastQuestion.value) return;
+  isNavigating.value = true;
+  clearAutoTimer();               // 主动跳转时清理定时器
+  store.nextQuestion();
+  // nextQuestion 会触发 currentQuestionIndex 的 watcher，其中会将 isNavigating 重置为 false
+  // 但为了保险，在异步完成后重置
+  nextTick(() => {
+    isNavigating.value = false;
+  });
+};
+
+const goToPrev = () => {
+  if (isNavigating.value || currentQuestionIndex.value <= 0) return;
+  isNavigating.value = true;
+  clearAutoTimer();               // 返回上一题时清理
+  store.currentQuestionIndex--;
+  playSound('select', 0.1);
+  nextTick(() => {
+    isNavigating.value = false;
+  });
+};
+
 const finishQuiz = () => {
+  if (isNavigating.value) return;
   store.completeQuiz();
 };
 
-// ---------- 转场动画钩子 ----------
+// ---------- 转场动画钩子（确保动画过程中无定时器干扰）----------
 const transitionName = ref('wipe');
 const beforeLeave = () => {
-  // 离开前若有定时器则清除，避免切换到新题后旧定时器触发
-  clearAutoTimer();
+  clearAutoTimer();              // 离开动画开始前，强制清除所有定时器
 };
 const afterEnter = () => {
-  // 进入动画完成后，如果当前题已答过，且非最后一题，可重新启动自动跳转？
-  // 但为了符合“答完题才自动跳转”，已答题不再自动跳转
+  // 进入新题后，无需额外操作（状态已在 watch 中恢复）
 };
 
-// ---------- 当所有题答完，触发觉醒 ----------
+// ---------- 全部答完自动觉醒 ----------
 watch(answers, (newAns) => {
-  if (newAns.every(a => a !== null)) {
+  if (newAns.every((a) => a !== null)) {
     store.completeQuiz();
   }
 }, {deep: true});
 
-// 清理定时器
+// 组件卸载时清理
 onBeforeUnmount(() => {
   clearAutoTimer();
 });
 </script>
 
 <style lang="scss" scoped>
-@import '../../styles/variables';
-@import '../../styles/mixins';
+// ----- 全局变量后备（确保独立运行）-----
+$color-void: #0a0c0e !default;
+$color-dust: #1a1e24 !default;
+$color-heartbeat: #ff6b35 !default;
+$color-paper: #f5f1e8 !default;
+$color-mist: #a0a9b2 !default;
+$color-signal: #ff8c5a !default;
+$font-mono: 'JetBrains Mono', monospace !default;
+$font-serif: 'Source Serif 4', serif !default;
+$font-hand: 'Switzer', sans-serif !default;
+$ease-drawer: cubic-bezier(0.22, 0.98, 0.5, 1.02) !default;
+$ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1) !default;
+$bp-mobile: 768px !default;
 
-$ease-spring: cubic-bezier(0.68, -0.55, 0.27, 1.55) !default;
+// 噪声纹理混合宏（纯CSS）
+@mixin noise-overlay($opacity: 0.02, $color: #000) {
+  position: relative;
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    background-image: repeating-radial-gradient(
+            circle at 20% 30%,
+            rgba($color, 0.1) 0px,
+            transparent 1px,
+            transparent 2px
+    ),
+    repeating-radial-gradient(
+            circle at 80% 70%,
+            rgba($color, 0.08) 0px,
+            transparent 2px,
+            transparent 3px
+    );
+    background-size: 4px 4px, 6px 6px;
+    opacity: $opacity;
+    mix-blend-mode: overlay;
+  }
+}
 
-// ---------- 手绘噪声卡片背景（继承AGENTS.md规范）----------
+// ---------- 观测卡片（旧纸纹理）----------
 .obs-card {
   background: $color-dust;
-  position: relative;
-  @include noise-overlay(0.02, #000);
+  @include noise-overlay(0.03, #000);
   box-shadow: 0 0 20px rgba($color-heartbeat, 0.08);
-  border: 0.5px solid rgba($color-paper, 0.15);
+  border: 0.5px solid rgba($color-paper, 0.2);
   border-radius: 4px;
-  padding: 2rem;
+  padding: 2.5rem;
   transition: box-shadow 0.3s $ease-drawer;
+  // 不设置 position，由动画类接管绝对定位
+  overflow: hidden;
 
   &:hover {
     box-shadow: 0 0 32px rgba($color-heartbeat, 0.12);
   }
+
+  // 手绘磨损边缘
+  .paper-tear-top,
+  .paper-tear-bottom {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 6px;
+    background: repeating-linear-gradient(
+            90deg,
+            rgba($color-paper, 0.1) 0px,
+            rgba($color-paper, 0.1) 2px,
+            transparent 2px,
+            transparent 6px
+    );
+    pointer-events: none;
+  }
+
+  .paper-tear-top {
+    top: -3px;
+  }
+
+  .paper-tear-bottom {
+    bottom: -3px;
+  }
 }
 
-// ---------- 页面开始动画（手绘晕影）----------
+// ---------- 页面入场动画（手绘晕影）----------
 .question-set {
   width: 100%;
-  max-width: 800px;
+  max-width: 820px;
   margin: 0 auto;
   opacity: 0;
   transform: scale(0.98);
+  filter: blur(3px);
   animation: page-appear 0.8s $ease-drawer forwards;
-  filter: blur(2px);
-  animation-fill-mode: forwards;
+  position: relative; // 为绝对定位的过渡元素提供容器
 
   &.page-enter {
     opacity: 1;
@@ -344,7 +484,7 @@ $ease-spring: cubic-bezier(0.68, -0.55, 0.27, 1.55) !default;
   }
 }
 
-// ---------- 进度条（手绘细线）----------
+// ---------- 进度条 ----------
 .progress {
   display: flex;
   align-items: center;
@@ -362,7 +502,7 @@ $ease-spring: cubic-bezier(0.68, -0.55, 0.27, 1.55) !default;
   .bar {
     flex: 1;
     height: 1px;
-    background: rgba($color-paper, 0.2);
+    background: rgba($color-paper, 0.15);
     margin: 0 1.2rem;
     position: relative;
     overflow: hidden;
@@ -379,8 +519,8 @@ $ease-spring: cubic-bezier(0.68, -0.55, 0.27, 1.55) !default;
     font-family: $font-mono;
     color: $color-paper;
     background: rgba($color-heartbeat, 0.1);
-    padding: 0.2rem 0.6rem;
-    border-radius: 12px;
+    padding: 0.2rem 0.8rem;
+    border-radius: 30px;
     font-size: 0.8rem;
     border: 0.5px solid rgba($color-heartbeat, 0.3);
   }
@@ -389,43 +529,41 @@ $ease-spring: cubic-bezier(0.68, -0.55, 0.27, 1.55) !default;
 // ---------- 题目头部 ----------
 .question-header {
   margin-bottom: 2rem;
-  position: relative;
 
   .question-number {
     display: inline-block;
     color: $color-heartbeat;
-    font-size: 1rem;
+    font-size: 0.95rem;
     margin-bottom: 0.75rem;
     font-family: $font-mono;
     border-bottom: 1px dashed $color-heartbeat;
     padding-bottom: 0.25rem;
-    letter-spacing: 0.15em;
+    letter-spacing: 0.2em;
   }
 
   h3 {
-    font-size: 1.6rem;
+    font-size: 1.7rem;
     line-height: 1.5;
     font-weight: 400;
     font-family: $font-serif;
     color: $color-paper;
     margin-top: 0.5rem;
     text-shadow: 0 0 10px rgba($color-paper, 0.05);
-
     @media (max-width: $bp-mobile) {
       font-size: 1.3rem;
     }
   }
 }
 
-// ---------- 选项（手绘单选）----------
+// ---------- 手绘单选 ----------
 .options {
   margin-bottom: 2rem;
 
   .hand-radio {
     display: flex;
     align-items: flex-start;
-    margin-bottom: 1rem;
-    padding: 0.75rem 1rem;
+    margin-bottom: 0.8rem;
+    padding: 0.9rem 1.2rem;
     transition: all 0.2s $ease-drawer;
     border-radius: 4px;
     border: 0.5px solid transparent;
@@ -448,7 +586,11 @@ $ease-spring: cubic-bezier(0.68, -0.55, 0.27, 1.55) !default;
       border-left: 3px solid $color-heartbeat;
     }
 
-    input[type="radio"] {
+    &.ripple-active {
+      background: rgba($color-heartbeat, 0.15);
+    }
+
+    input[type='radio'] {
       position: absolute;
       opacity: 0;
       width: 0;
@@ -457,11 +599,11 @@ $ease-spring: cubic-bezier(0.68, -0.55, 0.27, 1.55) !default;
 
     .radio-custom {
       display: inline-block;
-      width: 18px;
-      height: 18px;
+      width: 20px;
+      height: 20px;
       border: 1.5px solid $color-mist;
       border-radius: 50%;
-      margin-right: 12px;
+      margin-right: 14px;
       flex-shrink: 0;
       position: relative;
       top: 2px;
@@ -473,8 +615,8 @@ $ease-spring: cubic-bezier(0.68, -0.55, 0.27, 1.55) !default;
         position: absolute;
         top: 4px;
         left: 4px;
-        width: 8px;
-        height: 8px;
+        width: 10px;
+        height: 10px;
         border-radius: 50%;
         background: $color-heartbeat;
         opacity: 0;
@@ -483,7 +625,7 @@ $ease-spring: cubic-bezier(0.68, -0.55, 0.27, 1.55) !default;
       }
     }
 
-    input[type="radio"]:checked + .radio-custom {
+    input[type='radio']:checked + .radio-custom {
       border-color: $color-heartbeat;
 
       &::after {
@@ -498,50 +640,49 @@ $ease-spring: cubic-bezier(0.68, -0.55, 0.27, 1.55) !default;
       line-height: 1.5;
       color: $color-paper;
       flex: 1;
+      letter-spacing: 0.02em;
     }
   }
 }
 
-// ---------- 点评区域（打字机逐字）----------
+// ---------- 点评区（打字机）----------
 .comment-wrapper {
   margin: 2rem 0 1.5rem;
-  padding-top: 1.2rem;
-  border-top: 1px dashed rgba($color-heartbeat, 0.4);
+  padding: 1.2rem 1.5rem;
+  background: rgba($color-void, 0.3);
+  border-left: 3px solid $color-heartbeat;
   position: relative;
+  @include noise-overlay(0.01, $color-heartbeat);
 
-  &::before {
-    content: '✧';
+  .comment-marker {
     position: absolute;
-    top: -0.7rem;
+    top: -0.6rem;
     left: 1rem;
     background: $color-dust;
     color: $color-heartbeat;
-    padding: 0 0.5rem;
-    font-size: 0.9rem;
+    padding: 0 0.6rem;
+    font-size: 0.75rem;
+    font-family: $font-mono;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
   }
 }
 
 .comment {
   font-family: $font-hand;
   font-style: italic;
-  color: lighten($color-mist, 15%);
+  color: lighten($color-mist, 18%);
   font-size: 1.05rem;
-  line-height: 1.6;
-  padding: 0.2rem 0.5rem;
+  line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
-  border-left: 2px solid rgba($color-heartbeat, 0.3);
-  padding-left: 1rem;
 
-  &.typing {
-    &::after {
-      content: '|';
-      display: inline-block;
-      animation: blink-caret 0.8s infinite;
-      color: $color-heartbeat;
-      font-weight: 400;
-      margin-left: 2px;
-    }
+  &.typing::after {
+    content: '|';
+    display: inline-block;
+    animation: blink-caret 0.8s infinite;
+    color: $color-heartbeat;
+    margin-left: 2px;
   }
 }
 
@@ -554,7 +695,7 @@ $ease-spring: cubic-bezier(0.68, -0.55, 0.27, 1.55) !default;
   }
 }
 
-// ---------- 导航按钮组（手绘风格）----------
+// ---------- 导航按钮 ----------
 .nav-actions {
   display: flex;
   align-items: center;
@@ -570,21 +711,23 @@ $ease-spring: cubic-bezier(0.68, -0.55, 0.27, 1.55) !default;
     background: transparent;
     border: 1px solid rgba($color-paper, 0.3);
     color: $color-paper;
-    padding: 0.6rem 1.4rem;
+    padding: 0.7rem 1.6rem;
     font-family: $font-hand;
     font-size: 0.95rem;
     transition: all 0.2s $ease-drawer;
     cursor: pointer;
-    border-radius: 30px;
+    border-radius: 40px;
+    letter-spacing: 0.05em;
 
     svg {
       stroke: $color-paper;
+      width: 18px;
+      height: 18px;
     }
 
     &:hover {
       border-color: $color-heartbeat;
       background: rgba($color-heartbeat, 0.08);
-      color: $color-paper;
       transform: translateY(-1px);
     }
 
@@ -597,7 +740,7 @@ $ease-spring: cubic-bezier(0.68, -0.55, 0.27, 1.55) !default;
     }
 
     &.skip-btn {
-      border-color: rgba($color-heartbeat, 0.6);
+      border-color: rgba($color-heartbeat, 0.7);
       color: $color-heartbeat;
 
       svg {
@@ -618,20 +761,21 @@ $ease-spring: cubic-bezier(0.68, -0.55, 0.27, 1.55) !default;
   .auto-hint {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.6rem;
     color: $color-mist;
-    font-size: 0.8rem;
-    background: rgba(0, 0, 0, 0.3);
-    padding: 0.3rem 0.8rem;
+    font-size: 0.85rem;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 0.4rem 1.2rem;
     border-radius: 40px;
-    border: 0.5px solid rgba($color-heartbeat, 0.2);
+    border: 0.5px solid rgba($color-heartbeat, 0.3);
+    backdrop-filter: blur(2px);
 
     .dot-pulse {
       width: 8px;
       height: 8px;
       background: $color-signal;
       border-radius: 50%;
-      animation: pulse-dot 1.2s $ease-pulse infinite;
+      animation: pulse-dot 1.2s infinite;
     }
   }
 }
@@ -647,21 +791,21 @@ $ease-spring: cubic-bezier(0.68, -0.55, 0.27, 1.55) !default;
   }
 }
 
-// ---------- 从左到右擦除转场（核心！）----------
+// ========== 核心：从左到右擦除转场（1秒，抽屉缓动）==========
 .wipe-enter-active,
 .wipe-leave-active {
-  transition: clip-path 1s $ease-drawer, opacity 0.6s $ease-drawer;
-  position: absolute;
+  transition: clip-path 1s $ease-drawer, opacity 0.8s $ease-drawer;
+  position: absolute !important; // 强制脱离文档流，与父容器相对定位配合
   width: 100%;
 }
 
 .wipe-enter-from {
-  clip-path: inset(0 100% 0 0); /* 右边完全裁剪，从右向左展开 */
+  clip-path: inset(0 0 0 100%);
   opacity: 0;
 }
 
 .wipe-leave-to {
-  clip-path: inset(0 0 0 100%); /* 左边完全裁剪，从左向右擦除 */
+  clip-path: inset(0 100% 0 0);
   opacity: 0;
 }
 
@@ -671,12 +815,12 @@ $ease-spring: cubic-bezier(0.68, -0.55, 0.27, 1.55) !default;
   opacity: 1;
 }
 
-// 确保卡片在转场时正确堆叠
+// 卡片本身不再设置 position，由过渡类接管
 .question-card {
-  transition: all 0.2s;
+  // 无 position 设置，由 .wipe-* 中的 absolute 控制
 }
 
-// 小屏适配
+// ---------- 移动端适配 ----------
 @media (max-width: $bp-mobile) {
   .obs-card {
     padding: 1.5rem;
@@ -688,6 +832,9 @@ $ease-spring: cubic-bezier(0.68, -0.55, 0.27, 1.55) !default;
     .obs-button {
       justify-content: center;
     }
+  }
+  .comment {
+    font-size: 0.95rem;
   }
 }
 </style>
