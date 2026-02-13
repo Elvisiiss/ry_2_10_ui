@@ -35,47 +35,50 @@
       </svg>
     </div>
 
-    <!-- 彩蛋触发提示 + 故障闪烁层 -->
+    <!-- 彩蛋触发提示 + 故障闪烁层 (消息自动消失) -->
     <transition name="glitch-slide">
-      <div v-if="!easter.triggered" class="easter-message mono">
+      <div v-if="showEasterMessage" class="easter-message mono">
         > resolve states via physical interference...
       </div>
     </transition>
     <div v-if="easter.triggered" class="glitch-overlay"></div>
 
-    <!-- 主内容区 —— 四阶段切换动画，条件指令直接加在 transition 上 -->
+    <!-- 主内容区 —— 四阶段切换动画 -->
     <main class="main-content">
-      <!-- 阶段1：信号捕获（SignalIntro）—— 淡入 + 微弱上浮 -->
+      <!-- 阶段1：信号捕获（SignalIntro） -->
       <transition v-if="!store.hasConnected" name="fade-signal" mode="out-in">
         <SignalIntro key="signal"/>
       </transition>
 
-      <!-- 阶段2：问卷校准（QuestionSet）—— 右侧滑入，overshoot 缓动 -->
+      <!-- 阶段2：问卷校准（QuestionSet） -->
       <transition v-else-if="!store.isQuizFinished" name="slide-question" mode="out-in">
         <QuestionSet key="quiz"/>
       </transition>
 
-      <!-- 阶段3：觉醒时刻（LuxReveal）—— 失真 + 像素汇聚感，steps 逐帧 -->
+      <!-- 阶段3：觉醒时刻（LuxReveal） -->
       <transition v-else-if="store.isAwaken && !store.showInvite" name="distort-awaken" mode="out-in">
         <LuxReveal key="lux"/>
       </transition>
 
-      <!-- 阶段4：邀请函（CTAInvite）—— 从下至上，回弹缓动 -->
+      <!-- 阶段4：邀请函（CTAInvite） -->
       <transition v-else-if="store.showInvite" name="fade-invite" mode="out-in">
         <CTAInvite key="invite"/>
       </transition>
     </main>
 
-    <!-- 脉冲频率指示器（彩蛋触发后显示，极客彩蛋） -->
+    <!-- 脉冲频率指示器（彩蛋触发后显示，增加动态信号条） -->
     <div v-if="easter.triggered" class="pulse-indicator mono">
       <span class="pulse-dot"></span>
-      17kHz ███████░░░ 73%
+      <span class="pulse-text">17kHz ███████░░░ 73%</span>
+      <div class="signal-bars">
+        <span v-for="n in 5" :key="n" :style="{ animationDelay: n * 0.1 + 's' }"></span>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import {onMounted, ref, watch} from 'vue';
+import {onMounted, onUnmounted, ref, watch} from 'vue';
 import {useCalibrationStore} from '../stores/calibration';
 import {usePulse} from '../composables/usePulse';
 import {useEasterEgg} from '../composables/useEasterEgg';
@@ -92,7 +95,7 @@ const {startPulse, stopPulse} = usePulse();
 const {initAudio} = useAudio();
 const easter = useEasterEgg();
 
-// 彩蛋齿轮按压状态（用于旋转动画）
+// 彩蛋齿轮按压状态
 const cogPressed = ref(false);
 const onCogPress = () => {
   easter.startPress();
@@ -103,7 +106,39 @@ const onCogRelease = () => {
   cogPressed.value = false;
 };
 
-// 随机生成星点位置与闪烁延迟（纯装饰）
+// 彩蛋消息单独控制，8秒后自动消失
+const showEasterMessage = ref(false);
+let messageTimer = null;
+
+watch(() => easter.triggered.value, (val) => {
+  // 彩蛋触发时同步到store
+  if (val) store.triggerEasterEgg();
+
+  // 处理消息显示/隐藏
+  if (val) {
+    // 清除之前的定时器
+    if (messageTimer) clearTimeout(messageTimer);
+    showEasterMessage.value = true;
+    messageTimer = setTimeout(() => {
+      showEasterMessage.value = false;
+      messageTimer = null;
+    }, 8000);
+  } else {
+    // 如果彩蛋状态被外部重置，也隐藏消息
+    if (messageTimer) {
+      clearTimeout(messageTimer);
+      messageTimer = null;
+    }
+    showEasterMessage.value = false;
+  }
+});
+
+// 组件卸载时清除定时器
+onUnmounted(() => {
+  if (messageTimer) clearTimeout(messageTimer);
+});
+
+// 随机生成星点位置与闪烁延迟
 const starStyle = (i) => {
   const size = Math.floor(Math.random() * 2) + 1;
   const left = Math.random() * 100;
@@ -121,18 +156,13 @@ const starStyle = (i) => {
   };
 };
 
-// 彩蛋触发后同步到 store
-watch(() => easter.triggered.value, (val) => {
-  if (val) store.triggerEasterEgg();
-});
-
-// 页面加载时仅预初始化音频，不自动播放
+// 页面加载时仅预初始化音频
 onMounted(() => {
 });
 </script>
 
 <style lang="scss" scoped>
-// ----- 变量后备值（若全局未定义，使用设计稿推荐值）-----
+// ----- 变量后备值 -----
 $color-signal: #FF8C5A !default;
 $ease-pulse: cubic-bezier(0.45, 0.05, 0.55, 0.95) !default;
 $ease-drawer: cubic-bezier(0.22, 0.98, 0.5, 1.02) !default;
@@ -148,7 +178,7 @@ $ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1) !default;
   @include noise-overlay(0.03, #fff);
   overflow-x: hidden;
 
-  // ---------- 深空星点（手绘感，非对称分布）----------
+  // 深空星点
   .stars {
     position: fixed;
     top: 0;
@@ -175,7 +205,7 @@ $ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1) !default;
     }
   }
 
-  // ---------- CRT 扫描线（模拟旧式显示器）----------
+  // CRT 扫描线
   .crt-scanline {
     position: fixed;
     top: 0;
@@ -206,7 +236,7 @@ $ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1) !default;
     }
   }
 
-  // ---------- 动态噪声（彩蛋触发时增强）----------
+  // 动态噪声
   .noise-dynamic {
     position: fixed;
     top: 0;
@@ -241,7 +271,7 @@ $ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1) !default;
     }
   }
 
-  // ---------- 彩蛋齿轮（长按旋转）----------
+  // 彩蛋齿轮
   .easter-egg {
     position: fixed;
     bottom: 24px;
@@ -276,7 +306,7 @@ $ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1) !default;
     }
   }
 
-  // ---------- 彩蛋消息（滑动入场）----------
+  // 彩蛋消息
   .easter-message {
     position: fixed;
     top: 20px;
@@ -303,7 +333,7 @@ $ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1) !default;
     animation: slideDown 0.2s $ease-drawer reverse;
   }
 
-  // ---------- 故障特效层（彩蛋触发）----------
+  // 故障特效层
   .glitch-overlay {
     position: fixed;
     top: 0;
@@ -341,7 +371,7 @@ $ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1) !default;
     }
   }
 
-  // ---------- 脉冲指示器（彩蛋专属）----------
+  // 脉冲指示器（新增动态信号条）
   .pulse-indicator {
     position: fixed;
     bottom: 24px;
@@ -355,10 +385,10 @@ $ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1) !default;
     letter-spacing: 2px;
     z-index: $z-easter + 1;
     border: 0.5px solid rgba($color-heartbeat, 0.3);
+    backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
-    gap: 6px;
-    backdrop-filter: blur(4px);
+    gap: 8px;
 
     .pulse-dot {
       display: inline-block;
@@ -368,6 +398,27 @@ $ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1) !default;
       border-radius: 50%;
       animation: pulseDot 1.2s infinite $ease-pulse;
       box-shadow: 0 0 8px $color-signal;
+    }
+
+    .pulse-text {
+      // 保留原有文本
+    }
+
+    // 动态信号条
+    .signal-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 12px;
+
+      span {
+        display: block;
+        width: 4px;
+        background: $color-signal;
+        border-radius: 1px;
+        animation: barPulse 0.8s infinite ease-in-out alternate;
+        box-shadow: 0 0 6px $color-signal;
+      }
     }
   }
 
@@ -382,7 +433,18 @@ $ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1) !default;
     }
   }
 
-  // ---------- 主内容容器 ----------
+  @keyframes barPulse {
+    0% {
+      height: 4px;
+      opacity: 0.6;
+    }
+    100% {
+      height: 12px;
+      opacity: 1;
+    }
+  }
+
+  // 主内容容器
   .main-content {
     display: flex;
     flex-direction: column;
@@ -394,8 +456,7 @@ $ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1) !default;
     z-index: 10;
   }
 
-  // ---------- 阶段切换动画（各阶段独立缓动）----------
-  // 1. 信号阶段：淡入 + 微弱上浮（呼吸感）
+  // 阶段切换动画（保持不变）
   .fade-signal-enter-active,
   .fade-signal-leave-active {
     transition: opacity 0.6s $ease-drawer, transform 0.6s $ease-drawer;
@@ -411,7 +472,6 @@ $ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1) !default;
     transform: translateY(-8px);
   }
 
-  // 2. 问卷阶段：右侧滑入，overshoot 缓动
   .slide-question-enter-active {
     transition: all 0.5s cubic-bezier(0.22, 0.98, 0.5, 1.02);
   }
@@ -430,7 +490,6 @@ $ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1) !default;
     transform: translateX(-40px);
   }
 
-  // 3. 觉醒阶段：失真 + 像素汇聚（steps 逐帧）
   .distort-awaken-enter-active {
     animation: distortIn 0.8s steps(6, end);
   }
@@ -484,7 +543,6 @@ $ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1) !default;
     }
   }
 
-  // 4. 邀请函阶段：从下至上淡入，回弹缓动
   .fade-invite-enter-active {
     transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
