@@ -187,8 +187,10 @@ const isAutoTimerActive = ref(false);
 const countdown = ref(2);
 let autoTimer = null;
 let countdownInterval = null;
-// 存储启动定时器时的题目索引，用于防止过时跳转
 let timerStartIndex = null;
+
+// ---------- 打字机定时器句柄（修复双重显示核心）----------
+const typewriterInterval = ref(null);
 
 // 清除所有定时器（组件卸载或离开题目时强制清理）
 const clearAutoTimer = () => {
@@ -205,13 +207,22 @@ const clearAutoTimer = () => {
   timerStartIndex = null;
 };
 
+// 清除打字机定时器（防止残留）
+const clearTypewriter = () => {
+  if (typewriterInterval.value) {
+    clearInterval(typewriterInterval.value);
+    typewriterInterval.value = null;
+  }
+  isTyping.value = false;
+};
+
 // 启动自动跳转（仅在点评完全显示后调用一次）
 const startAutoNext = () => {
   if (isLastQuestion.value) return;
-  clearAutoTimer(); // 确保没有残留定时器
+  clearAutoTimer();
   isAutoTimerActive.value = true;
   countdown.value = 2;
-  timerStartIndex = currentQuestionIndex.value; // 记录当前索引
+  timerStartIndex = currentQuestionIndex.value;
 
   countdownInterval = setInterval(() => {
     countdown.value -= 1;
@@ -222,7 +233,6 @@ const startAutoNext = () => {
   }, 1000);
 
   autoTimer = setTimeout(() => {
-    // 只有当前索引与启动时一致，且没有正在导航，且不是最后一题，才执行跳转
     if (
         !isLastQuestion.value &&
         selectedOption.value !== null &&
@@ -231,7 +241,7 @@ const startAutoNext = () => {
     ) {
       goToNext();
     }
-    clearAutoTimer(); // 跳转后清理（或条件不满足时清理）
+    clearAutoTimer();
   }, 2000);
 };
 
@@ -244,49 +254,49 @@ const skipAutoAndNext = () => {
   }
 };
 
-// ---------- 切换题目时重置状态（不自动启动任何定时器）----------
+// ---------- 切换题目时重置状态（并清除所有残留定时器）----------
 watch(currentQuestionIndex, async (newIdx, oldIdx) => {
-  clearAutoTimer();               // 离开旧题时强制清除定时器
-  localAnswered.value = false;    // 重置本地锁
-  rippleIndex.value = null;
-  isTyping.value = false;
-  isNavigating.value = false;    // 重置导航锁
+  // 🔧 强制清除打字机定时器，杜绝向新题追加旧字符
+  clearTypewriter();
+  clearAutoTimer();
 
-  // 恢复已选答案（如果有）
+  localAnswered.value = false;
+  rippleIndex.value = null;
+  isTyping.value = false;      // 二次确保
+  isNavigating.value = false;
+
   const saved = answers.value[newIdx];
   selectedOption.value = saved !== null ? saved : null;
-  displayComment.value = '';
+  displayComment.value = '';   // 清空评论显示区
 
   if (saved !== null) {
-    // 已答题：直接显示完整评论，不自动跳转
     await nextTick();
     displayComment.value = currentQuestion.value.comments[saved];
-    localAnswered.value = true;   // 标记本地已答
+    localAnswered.value = true;
   }
 }, {immediate: true});
 
-// ---------- 选项选择：严格的防重复锁 ----------
+// ---------- 选项选择：严格的防重复锁 + 打字机互斥 ----------
 const onSelect = async (idx) => {
   // 禁止：已答过、本地已锁、正在打字、自动跳转激活时、正在导航
   if (isAnswered.value || localAnswered.value || isTyping.value || isAutoTimerActive.value || isNavigating.value) return;
-  if (selectedOption.value !== null) return; // 已经选过
+  if (selectedOption.value !== null) return;
 
-  // 立即清除可能残留的旧定时器，确保全新选择
+  // 🔧 清除可能残留的自动定时器和打字机定时器
   clearAutoTimer();
+  clearTypewriter();
 
-  // 波纹反馈
   rippleIndex.value = idx;
   setTimeout(() => {
     rippleIndex.value = null;
   }, 300);
 
-  // 锁定，防止重复触发
   localAnswered.value = true;
   selectedOption.value = idx;
   store.selectAnswer(currentQuestionIndex.value, idx);
   await playSound('select', 0.2);
 
-  // 打字机显示完整点评
+  // 打字机显示完整点评（保证每次都是全新启动）
   const fullComment = currentQuestion.value.comments[idx];
   await typeWriter(fullComment);
 
@@ -296,34 +306,39 @@ const onSelect = async (idx) => {
   }
 };
 
-// 打字机逐字动画（40ms/字）
+// 🔧 重构打字机：使用可控定时器句柄，防止重叠
 const typeWriter = (text) => {
   return new Promise((resolve) => {
+    clearTypewriter();                     // 清除旧定时器
     isTyping.value = true;
-    displayComment.value = '';
+    displayComment.value = '';            // 清空容器
+
     const chars = text.split('');
     let i = 0;
-    const interval = setInterval(() => {
+    typewriterInterval.value = setInterval(() => {
       if (i < chars.length) {
         displayComment.value += chars[i];
         i++;
       } else {
-        clearInterval(interval);
-        isTyping.value = false;
+        clearTypewriter();               // 完成后清理自身
         resolve();
       }
     }, 40);
   });
 };
 
-// ---------- 导航方法 ----------
+// ---------- 导航方法（强制步长=1，禁用 store.nextQuestion）----------
 const goToNext = () => {
   if (isNavigating.value || isLastQuestion.value) return;
   isNavigating.value = true;
-  clearAutoTimer();               // 主动跳转时清理定时器
-  store.nextQuestion();
-  // nextQuestion 会触发 currentQuestionIndex 的 watcher，其中会将 isNavigating 重置为 false
-  // 但为了保险，在异步完成后重置
+  clearAutoTimer();
+  clearTypewriter();      // 离开时也终止打字机
+
+  // 🔧 直接操作索引，保证每次只前进1
+  if (currentQuestionIndex.value < 4) {
+    store.currentQuestionIndex++;
+  }
+
   nextTick(() => {
     isNavigating.value = false;
   });
@@ -332,7 +347,8 @@ const goToNext = () => {
 const goToPrev = () => {
   if (isNavigating.value || currentQuestionIndex.value <= 0) return;
   isNavigating.value = true;
-  clearAutoTimer();               // 返回上一题时清理
+  clearAutoTimer();
+  clearTypewriter();
   store.currentQuestionIndex--;
   playSound('select', 0.1);
   nextTick(() => {
@@ -348,10 +364,11 @@ const finishQuiz = () => {
 // ---------- 转场动画钩子（确保动画过程中无定时器干扰）----------
 const transitionName = ref('wipe');
 const beforeLeave = () => {
-  clearAutoTimer();              // 离开动画开始前，强制清除所有定时器
+  clearAutoTimer();
+  clearTypewriter();     // 卡片离开时强制终结打字机
 };
 const afterEnter = () => {
-  // 进入新题后，无需额外操作（状态已在 watch 中恢复）
+  // 进入新题后，状态已在 watch 中恢复
 };
 
 // ---------- 全部答完自动觉醒 ----------
@@ -364,6 +381,7 @@ watch(answers, (newAns) => {
 // 组件卸载时清理
 onBeforeUnmount(() => {
   clearAutoTimer();
+  clearTypewriter();
 });
 </script>
 
@@ -420,14 +438,15 @@ $bp-mobile: 768px !default;
   border-radius: 4px;
   padding: 2.5rem;
   transition: box-shadow 0.3s $ease-drawer;
-  // 不设置 position，由动画类接管绝对定位
   overflow: hidden;
+  // 🔧 固定卡片横长：继承父容器宽度，确保绝对定位时不收缩
+  width: 100%;
+  box-sizing: border-box;
 
   &:hover {
     box-shadow: 0 0 32px rgba($color-heartbeat, 0.12);
   }
 
-  // 手绘磨损边缘
   .paper-tear-top,
   .paper-tear-bottom {
     position: absolute;
@@ -457,17 +476,24 @@ $bp-mobile: 768px !default;
 .question-set {
   width: 100%;
   max-width: 820px;
+  // 🔧 固定横长：桌面安全区宽度下限，移动端取消
+  min-width: 600px;
   margin: 0 auto;
   opacity: 0;
   transform: scale(0.98);
   filter: blur(3px);
   animation: page-appear 0.8s $ease-drawer forwards;
-  position: relative; // 为绝对定位的过渡元素提供容器
+  position: relative;
 
   &.page-enter {
     opacity: 1;
     transform: scale(1);
     filter: blur(0);
+  }
+
+  @media (max-width: $bp-mobile) {
+    min-width: auto; // 移动端无需下限，由父容器弹性决定
+    padding: 0 12px;
   }
 }
 
