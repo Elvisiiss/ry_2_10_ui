@@ -1,17 +1,17 @@
 <template>
   <div class="question-set" :class="{ 'page-enter': isPageEntered }">
-    <!-- 进度条（蚀刻细线） -->
-    <div class="progress">
-      <span class="mono label">校准进度</span>
-      <div class="bar">
-        <div class="fill" :style="{ width: progressWidth + '%' }"></div>
-      </div>
-      <span class="counter mono">{{ currentQuestionIndex + 1 }} / 5</span>
-    </div>
-
     <!-- ========== 擦除转场：每道题独立卡片 ========== -->
     <transition :name="transitionName" mode="out-in" @before-leave="beforeLeave" @after-enter="afterEnter">
       <div v-if="currentQuestion" :key="'card-' + currentQuestionIndex" class="obs-card question-card">
+        <!-- 进度条（移入卡片内部，确保不会被绝对定位的卡片遮盖） -->
+        <div class="progress">
+          <span class="mono label">校准进度</span>
+          <div class="bar">
+            <div class="fill" :style="{ width: progressWidth + '%' }"></div>
+          </div>
+          <span class="counter mono">{{ currentQuestionIndex + 1 }} / 5</span>
+        </div>
+
         <!-- 卡片头部 -->
         <div class="question-header">
           <span class="question-number mono">{{ formattedIndex }}</span>
@@ -284,6 +284,9 @@ const typeWriter = (text) => {
   });
 };
 
+// ========== 自动完成定时器（第五题延迟跳转）=========
+const autoCompleteTimer = ref(null);
+
 // ---------- 选项选择 ----------
 const onSelect = async (idx) => {
   // 多重锁：已答、正在打字、自动跳转激活、导航中
@@ -318,8 +321,14 @@ const onSelect = async (idx) => {
   const fullComment = currentQuestion.value.comments[idx];
   await typeWriter(fullComment);
 
-  // 打字机结束后启动自动跳转（仅非最后一题）
-  if (!isLastQuestion.value) {
+  // 打字机结束后：如果是最后一题则延迟完成，否则启动自动跳转
+  if (isLastQuestion.value) {
+    autoCompleteTimer.value = setTimeout(() => {
+      if (!isNavigating.value && selectedOption.value !== null) {
+        store.completeQuiz();
+      }
+    }, 2000);
+  } else {
     autoNextController.start(currentQuestionIndex.value, 2000);
   }
 };
@@ -374,6 +383,11 @@ const goToPrev = () => {
 
 const finishQuiz = () => {
   if (isNavigating.value) return;
+  // 清除自动完成定时器，防止重复调用
+  if (autoCompleteTimer.value) {
+    clearTimeout(autoCompleteTimer.value);
+    autoCompleteTimer.value = null;
+  }
   store.completeQuiz();
 };
 
@@ -429,17 +443,14 @@ const afterEnter = () => {
   // 不需要额外逻辑，状态已在 watch 中恢复
 };
 
-// ---------- 全部答完自动觉醒 ----------
-watch(answers, (newAns) => {
-  if (newAns.every((a) => a !== null)) {
-    store.completeQuiz();
-  }
-}, {deep: true});
-
 // ---------- 组件卸载时完全清理 ----------
 onBeforeUnmount(() => {
   autoNextController.cancel();
   clearTypewriter();
+  if (autoCompleteTimer.value) {
+    clearTimeout(autoCompleteTimer.value);
+    autoCompleteTimer.value = null;
+  }
 });
 </script>
 
@@ -532,15 +543,19 @@ $bp-mobile: 768px !default;
 
 // ---------- 页面入场动画（手绘晕影）----------
 .question-set {
+  height: 600px; // 固定高度，消除卡片高度跳动
+  display: flex;
+  flex-direction: column;
   width: 100%;
   max-width: 820px;
   min-width: 600px;
   margin: 0 auto;
+  position: relative; // 为内部绝对定位卡片提供参照
+
   opacity: 0;
   transform: scale(0.98);
   filter: blur(3px);
   animation: page-appear 0.8s $ease-drawer forwards;
-  position: relative;
 
   &.page-enter {
     opacity: 1;
@@ -551,6 +566,13 @@ $bp-mobile: 768px !default;
   @media (max-width: $bp-mobile) {
     min-width: auto;
     padding: 0 12px;
+  }
+
+  .obs-card {
+    flex: 1; // 占据剩余高度
+    overflow-y: auto; // 内部滚动
+    position: relative !important; // 覆盖 transition 强加的 absolute
+    height: auto; // 由 flex 决定
   }
 }
 
@@ -567,11 +589,11 @@ $bp-mobile: 768px !default;
   }
 }
 
-// ---------- 进度条 ----------
+// ---------- 进度条（移入卡片内部）----------
 .progress {
   display: flex;
   align-items: center;
-  margin-bottom: 2.5rem;
+  margin-bottom: 2rem; // 与卡片内容保持间距
   color: $color-mist;
   font-size: 0.85rem;
   letter-spacing: 0.1em;
@@ -874,32 +896,30 @@ $bp-mobile: 768px !default;
   }
 }
 
-// ========== 核心：从左到右擦除转场（1秒，抽屉缓动）==========
+// ========== 核心：从左到右擦除转场（改为透明度+位移，避免高度塌陷）==========
 .wipe-enter-active,
 .wipe-leave-active {
-  transition: clip-path 1s $ease-drawer, opacity 0.8s $ease-drawer;
-  position: absolute !important;
+  transition: opacity 0.5s $ease-drawer, transform 0.5s $ease-drawer;
+  position: absolute; // 卡片重叠，父容器固定高度保证不塌陷
   width: 100%;
+  top: 0;
+  left: 0;
 }
 
 .wipe-enter-from {
-  clip-path: inset(0 0 0 100%);
   opacity: 0;
+  transform: translateX(30px);
 }
 
 .wipe-leave-to {
-  clip-path: inset(0 100% 0 0);
   opacity: 0;
+  transform: translateX(-30px);
 }
 
 .wipe-enter-to,
 .wipe-leave-from {
-  clip-path: inset(0 0 0 0);
   opacity: 1;
-}
-
-.question-card {
-  // 无 position 设置，由 .wipe-* 中的 absolute 控制
+  transform: translateX(0);
 }
 
 // ---------- 移动端适配 ----------
