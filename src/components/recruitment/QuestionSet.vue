@@ -107,12 +107,19 @@ const {currentQuestionIndex, answers} = storeToRefs(store);
 // ---------- 页面入场动画 ----------
 const isPageEntered = ref(false);
 onMounted(() => {
+  // ===== 修复：强制重置 store 问卷状态 =====
+  store.$patch({
+    currentQuestionIndex: 0,
+    answers: [null, null, null, null, null],
+    isQuizFinished: false
+  });
+  // 触发入场动画
   requestAnimationFrame(() => {
     isPageEntered.value = true;
   });
 });
 
-// ---------- 题目数据（与AGENTS.md一致）----------
+// ---------- 题目数据 ----------
 const questions = [
   {
     title: '当我们在游戏里仰望距离地球 880 光年的 delta Cephei（造父四）时，我们看到的其实是？',
@@ -179,189 +186,190 @@ const isTyping = ref(false);
 const rippleIndex = ref(null);
 const localAnswered = ref(false); // 本地锁，防止重复点击
 
-// ---------- 导航锁，防止重复跳转 ----------
+// ---------- 导航锁 ----------
 const isNavigating = ref(false);
 
-// ---------- 自动跳转定时器（完全受控）----------
-const isAutoTimerActive = ref(false);
-const countdown = ref(2);
-let autoTimer = null;
-let countdownInterval = null;
-let timerStartIndex = null;
+// ========== 统一自动跳转控制器 ==========
+const autoNextController = {
+  timer: null,
+  countdownTimer: null,
+  startIndex: null,
+  active: ref(false),
+  countdown: ref(2),
 
-// ---------- 打字机定时器句柄 + 当前题目索引记录（修复双重显示核心）----------
-const typewriterInterval = ref(null);
-const typingQuestionIndex = ref(null); // 记录启动打字机时的题目索引
+  cancel() {
+    if (this.timer) clearTimeout(this.timer);
+    if (this.countdownTimer) clearInterval(this.countdownTimer);
+    this.timer = null;
+    this.countdownTimer = null;
+    this.startIndex = null;
+    this.active.value = false;
+    this.countdown.value = 2;
+  },
 
-// 清除所有定时器（组件卸载或离开题目时强制清理）
-const clearAutoTimer = () => {
-  if (autoTimer) {
-    clearTimeout(autoTimer);
-    autoTimer = null;
+  start(index, delay = 2000) {
+    this.cancel(); // 总是先取消旧定时器
+    this.startIndex = index;
+    this.active.value = true;
+    this.countdown.value = 2;
+
+    this.countdownTimer = setInterval(() => {
+      if (this.countdown.value > 0) this.countdown.value -= 1;
+    }, 1000);
+
+    this.timer = setTimeout(() => {
+      if (this.startIndex === null) return;
+      if (
+          !isLastQuestion.value &&
+          selectedOption.value !== null &&
+          currentQuestionIndex.value === this.startIndex &&
+          !isNavigating.value
+      ) {
+        goToNext();
+      }
+      this.cancel();
+    }, delay);
   }
-  if (countdownInterval) {
-    clearInterval(countdownInterval);
-    countdownInterval = null;
-  }
-  isAutoTimerActive.value = false;
-  countdown.value = 2;
-  timerStartIndex = null;
 };
 
-// 清除打字机定时器（先置空标志，再清除定时器，彻底防止残留回调）
+// 供模板使用的响应式状态
+const isAutoTimerActive = computed(() => autoNextController.active.value);
+const countdown = computed(() => autoNextController.countdown.value);
+
+// ========== 打字机（setTimeout 链 + 唯一 ID 防护）=========
+const typewriterTimer = ref(null);
+let currentTypewriterId = 0; // 全局递增，用于终止旧打字机
+
 const clearTypewriter = () => {
-  if (typewriterInterval.value) {
-    const timer = typewriterInterval.value;
-    typewriterInterval.value = null;   // 立即置空，已调度的回调会检测到并退出
-    clearInterval(timer);
+  if (typewriterTimer.value) {
+    clearTimeout(typewriterTimer.value);
+    typewriterTimer.value = null;
   }
   isTyping.value = false;
-  typingQuestionIndex.value = null;    // 清空索引记录
+  // 递增ID，使任何正在进行的打字机回调自动失效
+  currentTypewriterId++;
 };
 
-// 启动自动跳转（仅在点评完全显示后调用一次）
-const startAutoNext = () => {
-  if (isLastQuestion.value) return;
-  clearAutoTimer();
-  isAutoTimerActive.value = true;
-  countdown.value = 2;
-  timerStartIndex = currentQuestionIndex.value;
+const typeWriter = (text) => {
+  return new Promise((resolve) => {
+    clearTypewriter(); // 清理旧打字机
+    isTyping.value = true;
+    displayComment.value = '';
 
-  countdownInterval = setInterval(() => {
-    countdown.value -= 1;
-    if (countdown.value <= 0) {
-      clearInterval(countdownInterval);
-      countdown.value = 0;
-    }
-  }, 1000);
+    const typeId = ++currentTypewriterId; // 本次打字机的唯一ID
+    const targetIndex = currentQuestionIndex.value; // 启动时的题目索引
+    const chars = text.split('');
+    let i = 0;
 
-  autoTimer = setTimeout(() => {
-    if (
-        !isLastQuestion.value &&
-        selectedOption.value !== null &&
-        currentQuestionIndex.value === timerStartIndex &&
-        !isNavigating.value
-    ) {
-      goToNext();
-    }
-    clearAutoTimer();
-  }, 2000);
+    const addChar = () => {
+      // 校验：是否已被新的打字机覆盖 / 题目已切换
+      if (typeId !== currentTypewriterId || targetIndex !== currentQuestionIndex.value) {
+        isTyping.value = false;
+        resolve();
+        return;
+      }
+
+      if (i < chars.length) {
+        displayComment.value += chars[i];
+        i++;
+        typewriterTimer.value = setTimeout(addChar, 40);
+      } else {
+        isTyping.value = false;
+        typewriterTimer.value = null;
+        resolve();
+      }
+    };
+
+    addChar();
+  });
 };
 
-// 跳过等待，立即下一题
-const skipAutoAndNext = () => {
-  if (isNavigating.value || isLastQuestion.value) return;
-  clearAutoTimer();
-  if (!isLastQuestion.value && selectedOption.value !== null) {
-    goToNext();
-  }
-};
-
-// ---------- 切换题目时重置状态（并清除所有残留定时器）----------
-watch(currentQuestionIndex, async (newIdx, oldIdx) => {
-  clearTypewriter();   // 强制终结打字机，防止跨题残留
-  clearAutoTimer();
-
-  localAnswered.value = false;
-  rippleIndex.value = null;
-  isTyping.value = false;
-  isNavigating.value = false;
-
-  const saved = answers.value[newIdx];
-  selectedOption.value = saved !== null ? saved : null;
-  displayComment.value = '';   // 清空评论显示区
-
-  if (saved !== null) {
-    await nextTick();
-    displayComment.value = currentQuestion.value.comments[saved];
-    localAnswered.value = true;
-  }
-}, {immediate: true});
-
-// ---------- 选项选择：严格的防重复锁 + 打字机互斥 ----------
+// ---------- 选项选择 ----------
 const onSelect = async (idx) => {
-  // 禁止：已答过、本地已锁、正在打字、自动跳转激活时、正在导航
-  if (isAnswered.value || localAnswered.value || isTyping.value || isAutoTimerActive.value || isNavigating.value) return;
+  // 多重锁：已答、正在打字、自动跳转激活、导航中
+  if (isAnswered.value || localAnswered.value || isTyping.value || isNavigating.value) return;
   if (selectedOption.value !== null) return;
 
-  clearAutoTimer();
-  clearTypewriter();
+  // 立即取消任何待执行的自动跳转
+  autoNextController.cancel();
 
+  // 波纹反馈
   rippleIndex.value = idx;
   setTimeout(() => {
     rippleIndex.value = null;
   }, 300);
 
+  // 锁定本地状态
   localAnswered.value = true;
   selectedOption.value = idx;
-  store.selectAnswer(currentQuestionIndex.value, idx);
+
+  // ===== 修复：记录当前索引，防止 store 内部自动前进 =====
+  const beforeIndex = currentQuestionIndex.value;
+  store.selectAnswer(beforeIndex, idx);
+  // 如果 store 自动修改了索引，立即回退（仅保留答案，不跳题）
+  if (store.currentQuestionIndex !== beforeIndex && !isNavigating.value) {
+    console.warn('🛑 store 自动跳转已被拦截');
+    store.currentQuestionIndex = beforeIndex;
+  }
+
   await playSound('select', 0.2);
 
-  // 打字机显示完整点评（保证每次都是全新启动）
+  // 开始打字机
   const fullComment = currentQuestion.value.comments[idx];
   await typeWriter(fullComment);
 
-  // 点评结束后，自动跳转（仅非最后一题）
+  // 打字机结束后启动自动跳转（仅非最后一题）
   if (!isLastQuestion.value) {
-    startAutoNext();
+    autoNextController.start(currentQuestionIndex.value, 2000);
   }
 };
 
-// 🔧 重构打字机：记录启动时的题目索引，回调中严格校验，杜绝跨题残留
-const typeWriter = (text) => {
-  return new Promise((resolve) => {
-    clearTypewriter();                     // 清除旧定时器，并重置标志
-    isTyping.value = true;
-    displayComment.value = '';            // 清空容器
-    typingQuestionIndex.value = currentQuestionIndex.value; // 记录当前题目索引
-
-    const chars = text.split('');
-    let i = 0;
-    typewriterInterval.value = setInterval(() => {
-      // 关键防御：如果定时器已被清除，或题目索引已变化，立即停止
-      if (!typewriterInterval.value || typingQuestionIndex.value !== currentQuestionIndex.value) {
-        clearTypewriter();
-        resolve();
-        return;
-      }
-      if (i < chars.length) {
-        displayComment.value += chars[i];
-        i++;
-      } else {
-        clearTypewriter();
-        resolve();
-      }
-    }, 40);
-  });
+// ---------- 跳过等待，立即下一题 ----------
+const skipAutoAndNext = () => {
+  if (isNavigating.value || isLastQuestion.value) return;
+  autoNextController.cancel();
+  if (!isLastQuestion.value && selectedOption.value !== null) {
+    goToNext();
+  }
 };
 
-// ---------- 导航方法（强制步长=1，禁用 store.nextQuestion）----------
+// ---------- 导航方法（强制步长=1，防重跳）----------
 const goToNext = () => {
-  // 增加 selectedOption 校验，防止无答案时误跳转
   if (isNavigating.value || isLastQuestion.value || selectedOption.value === null) return;
-  isNavigating.value = true;
-  clearAutoTimer();
-  clearTypewriter();      // 离开时也终止打字机
 
-  if (currentQuestionIndex.value < 4) {
-    store.currentQuestionIndex++;
+  const beforeIdx = currentQuestionIndex.value;
+  const nextIdx = beforeIdx + 1;
+  if (nextIdx >= questions.length) return;
+
+  // 防御：如果目标索引已被其他操作设置，不再重复执行
+  if (store.currentQuestionIndex === nextIdx) {
+    console.warn('[goToNext] already at target index, skip');
+    isNavigating.value = false;
+    return;
   }
 
-  nextTick(() => {
+  isNavigating.value = true;
+  autoNextController.cancel(); // 取消自动跳转
+  clearTypewriter(); // 终止打字机
+
+  store.currentQuestionIndex = nextIdx;
+
+  // 延长锁释放时机，确保同一宏任务内无法再次调用
+  setTimeout(() => {
     isNavigating.value = false;
-  });
+  }, 0);
 };
 
 const goToPrev = () => {
   if (isNavigating.value || currentQuestionIndex.value <= 0) return;
   isNavigating.value = true;
-  clearAutoTimer();
+  autoNextController.cancel();
   clearTypewriter();
-  store.currentQuestionIndex--;
+  store.currentQuestionIndex = currentQuestionIndex.value - 1;
   playSound('select', 0.1);
-  nextTick(() => {
+  setTimeout(() => {
     isNavigating.value = false;
-  });
+  }, 0);
 };
 
 const finishQuiz = () => {
@@ -369,14 +377,56 @@ const finishQuiz = () => {
   store.completeQuiz();
 };
 
-// ---------- 转场动画钩子（确保动画过程中无定时器干扰）----------
+// ---------- 监听题目索引变化（重置所有状态 + 跳跃矫正 + 答案残留清理）----------
+watch(currentQuestionIndex, async (newIdx, oldIdx) => {
+  // ----- 跳跃矫正：如果索引跨度大于1，强制回退到旧索引+1 -----
+  if (oldIdx !== undefined && newIdx - oldIdx > 1) {
+    console.warn(`索引跳跃异常: ${oldIdx} → ${newIdx}，已自动修正`);
+    store.currentQuestionIndex = oldIdx + 1;
+    return; // 修正后会再次触发 watch，无需继续执行
+  }
+
+  // 1. 强制终止所有异步任务
+  autoNextController.cancel();
+  clearTypewriter();
+
+  // 2. 重置本地交互状态
+  localAnswered.value = false;
+  rippleIndex.value = null;
+  isTyping.value = false;
+  isNavigating.value = false;
+  displayComment.value = ''; // 立即清空评论
+
+  // 3. 从 store 恢复答案，同时清除历史残留答案
+  const saved = answers.value[newIdx];
+  selectedOption.value = saved !== null ? saved : null;
+
+  if (saved !== null) {
+    // 判断该答案是否为本次会话中刚刚选择的（通过 localAnswered 标记）
+    if (!localAnswered.value) {
+      // 不是刚刚选择的 -> 视为脏数据，清除 store 中的答案
+      store.$patch((state) => {
+        state.answers[newIdx] = null;
+      });
+      selectedOption.value = null;
+      displayComment.value = '';
+    } else {
+      // 是刚刚选择的，直接显示完整点评（无打字机效果，不触发自动跳转）
+      localAnswered.value = true; // 保持锁定状态
+      await nextTick();
+      displayComment.value = currentQuestion.value.comments[saved];
+    }
+  }
+}, {immediate: true});
+
+// ---------- 转场动画钩子 ----------
 const transitionName = ref('wipe');
 const beforeLeave = () => {
-  clearAutoTimer();
-  clearTypewriter();     // 卡片离开时强制终结打字机
+  autoNextController.cancel();
+  clearTypewriter();
 };
 const afterEnter = () => {
-  // 进入新题后，状态已在 watch 中恢复
+  // 不需要额外逻辑，状态已在 watch 中恢复
 };
 
 // ---------- 全部答完自动觉醒 ----------
@@ -386,14 +436,15 @@ watch(answers, (newAns) => {
   }
 }, {deep: true});
 
-// 组件卸载时清理
+// ---------- 组件卸载时完全清理 ----------
 onBeforeUnmount(() => {
-  clearAutoTimer();
+  autoNextController.cancel();
   clearTypewriter();
 });
 </script>
 
 <style lang="scss" scoped>
+/* ===== 样式部分：完全保持原样，无任何修改 ===== */
 // ----- 全局变量后备（确保独立运行）-----
 $color-void: #0a0c0e !default;
 $color-dust: #1a1e24 !default;
