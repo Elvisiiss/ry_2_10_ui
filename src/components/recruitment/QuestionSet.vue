@@ -12,12 +12,6 @@
           <span class="counter mono">{{ currentQuestionIndex + 1 }} / 5</span>
         </div>
 
-        <!-- 卡片头部 -->
-        <div class="question-header">
-          <span class="question-number mono">{{ formattedIndex }}</span>
-          <h3 class="hand-title">{{ currentQuestion.title }}</h3>
-        </div>
-
         <!-- 选项区（手绘单选 + 波纹反馈） -->
         <div class="options">
           <label
@@ -573,6 +567,50 @@ $bp-mobile: 768px !default;
     overflow-y: auto; // 内部滚动
     position: relative !important; // 覆盖 transition 强加的 absolute
     height: auto; // 由 flex 决定
+
+    // ===== 新增：自定义滚动条样式（手绘感）=====
+    &::-webkit-scrollbar {
+      width: 4px;
+      background: transparent;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: rgba($color-paper, 0.05);
+      border-radius: 4px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: $color-heartbeat;
+      border-radius: 4px;
+      box-shadow: 0 0 6px rgba($color-heartbeat, 0.5);
+
+      &:hover {
+        background: lighten($color-heartbeat, 10%);
+      }
+    }
+
+    // Firefox 滚动条
+    scrollbar-width: thin;
+    scrollbar-color: $color-heartbeat rgba($color-paper, 0.05);
+
+    // ===== 新增：顶部/底部边缘淡出效果（模拟可滚动提示）=====
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      background: linear-gradient(
+              to bottom,
+              rgba($color-void, 0.2) 0%,
+              transparent 15%,
+              transparent 85%,
+              rgba($color-void, 0.2) 100%
+      );
+      z-index: 1; // 置于内容之上但不影响交互
+    }
   }
 }
 
@@ -628,35 +666,6 @@ $bp-mobile: 768px !default;
     border-radius: 30px;
     font-size: 0.8rem;
     border: 0.5px solid rgba($color-heartbeat, 0.3);
-  }
-}
-
-// ---------- 题目头部 ----------
-.question-header {
-  margin-bottom: 2rem;
-
-  .question-number {
-    display: inline-block;
-    color: $color-heartbeat;
-    font-size: 0.95rem;
-    margin-bottom: 0.75rem;
-    font-family: $font-mono;
-    border-bottom: 1px dashed $color-heartbeat;
-    padding-bottom: 0.25rem;
-    letter-spacing: 0.2em;
-  }
-
-  h3 {
-    font-size: 1.7rem;
-    line-height: 1.5;
-    font-weight: 400;
-    font-family: $font-serif;
-    color: $color-paper;
-    margin-top: 0.5rem;
-    text-shadow: 0 0 10px rgba($color-paper, 0.05);
-    @media (max-width: $bp-mobile) {
-      font-size: 1.3rem;
-    }
   }
 }
 
