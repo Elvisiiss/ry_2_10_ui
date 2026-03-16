@@ -56,7 +56,7 @@ const store = useCalibrationStore();
 
 const onApply = () => {
   // 投递简历行为：可跳转至招聘表单
-  window.open('https://halcyon.careers/apply', '_blank');
+  window.open('http://www.elvel.cn/recruitment', '_blank');
 };
 </script>
 
