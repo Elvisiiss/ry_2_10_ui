@@ -3,7 +3,7 @@
     <!-- ========== 擦除转场：每道题独立卡片 ========== -->
     <transition :name="transitionName" mode="out-in" @before-leave="beforeLeave" @after-enter="afterEnter">
       <div v-if="currentQuestion" :key="'card-' + currentQuestionIndex" class="obs-card question-card">
-        <!-- 进度条（移入卡片内部，确保不会被绝对定位的卡片遮盖） -->
+        <!-- 进度条 -->
         <div class="progress">
           <span class="mono label">校准进度</span>
           <div class="bar">
@@ -18,7 +18,7 @@
           <h3 class="hand-title">{{ currentQuestion.title }}</h3>
         </div>
 
-        <!-- 选项区（手绘单选 + 波纹反馈） -->
+        <!-- 选项区 -->
         <div class="options">
           <label
               v-for="(opt, idx) in currentQuestion.options"
@@ -43,7 +43,7 @@
           </label>
         </div>
 
-        <!-- ===== 点评区：必现，打字机 ===== -->
+        <!-- ===== 点评区 ===== -->
         <div v-if="selectedOption !== null" class="comment-wrapper">
           <div class="comment-marker">✧ 观测笔记</div>
           <div ref="commentRef" class="comment typewriter" :class="{ typing: isTyping }">
@@ -53,7 +53,6 @@
 
         <!-- ===== 导航控制区 ===== -->
         <div v-if="selectedOption !== null" class="nav-actions">
-          <!-- 上一题 -->
           <button v-if="currentQuestionIndex > 0" class="obs-button prev-btn" @click="goToPrev">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <path d="M15 18l-6-6 6-6"/>
@@ -61,13 +60,11 @@
             上一题
           </button>
 
-          <!-- 自动跳转倒计时（仅当自动跳转激活） -->
           <div v-if="!isLastQuestion && isAutoTimerActive" class="auto-hint">
             <span class="dot-pulse"></span>
             <span class="mono">校准倒计时 {{ countdown }}s</span>
           </div>
 
-          <!-- 立即继续 / 跳过等待 -->
           <button
               v-if="!isLastQuestion"
               class="obs-button skip-btn"
@@ -80,13 +77,11 @@
             {{ isAutoTimerActive ? '立即继续' : '继续校准' }}
           </button>
 
-          <!-- 最后一题：完成按钮 -->
           <button v-else class="obs-button finish-btn" @click="finishQuiz">
             完成校准
           </button>
         </div>
 
-        <!-- 纸张磨损装饰 -->
         <div class="paper-tear-top"></div>
         <div class="paper-tear-bottom"></div>
       </div>
@@ -107,13 +102,11 @@ const {currentQuestionIndex, answers} = storeToRefs(store);
 // ---------- 页面入场动画 ----------
 const isPageEntered = ref(false);
 onMounted(() => {
-  // ===== 修复：强制重置 store 问卷状态 =====
   store.$patch({
     currentQuestionIndex: 0,
     answers: [null, null, null, null, null],
     isQuizFinished: false
   });
-  // 触发入场动画
   requestAnimationFrame(() => {
     isPageEntered.value = true;
   });
@@ -184,12 +177,56 @@ const isAnswered = computed(() => answers.value[currentQuestionIndex.value] !== 
 const displayComment = ref('');
 const isTyping = ref(false);
 const rippleIndex = ref(null);
-const localAnswered = ref(false); // 本地锁，防止重复点击
-
-// ---------- 导航锁 ----------
+const localAnswered = ref(false);
 const isNavigating = ref(false);
 
-// ========== 统一自动跳转控制器 ==========
+// 评论容器引用，用于测量宽度
+const commentRef = ref(null);
+
+// ---------- 测量汉字宽度（缓存结果）----------
+const getChineseCharWidth = (() => {
+  let cachedWidth = null;
+  return () => {
+    if (cachedWidth !== null) return cachedWidth;
+    if (!commentRef.value) return 16; // 默认值，防止报错
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const style = window.getComputedStyle(commentRef.value);
+    const font = `${style.fontSize} ${style.fontFamily}`;
+    ctx.font = font;
+    const metrics = ctx.measureText('中');
+    cachedWidth = metrics.width;
+    return cachedWidth;
+  };
+})();
+
+// ---------- 根据容器宽度格式化评论（插入换行符）----------
+const formatCommentByWidth = (comment) => {
+  if (!commentRef.value || !comment) return comment;
+  const container = commentRef.value;
+  const style = window.getComputedStyle(container);
+  const paddingLeft = parseFloat(style.paddingLeft) || 0;
+  const paddingRight = parseFloat(style.paddingRight) || 0;
+  const contentWidth = container.clientWidth - paddingLeft - paddingRight;
+  if (contentWidth <= 0) return comment;
+
+  const charWidth = getChineseCharWidth();
+  if (charWidth <= 0) return comment;
+
+  const maxChars = Math.floor(contentWidth / charWidth);
+  if (maxChars <= 0) return comment;
+
+  let result = '';
+  for (let i = 0; i < comment.length; i += maxChars) {
+    result += comment.substring(i, i + maxChars);
+    if (i + maxChars < comment.length) {
+      result += '\n';
+    }
+  }
+  return result;
+};
+
+// ---------- 自动跳转控制器 ----------
 const autoNextController = {
   timer: null,
   countdownTimer: null,
@@ -208,7 +245,7 @@ const autoNextController = {
   },
 
   start(index, delay = 2000) {
-    this.cancel(); // 总是先取消旧定时器
+    this.cancel();
     this.startIndex = index;
     this.active.value = true;
     this.countdown.value = 2;
@@ -232,13 +269,12 @@ const autoNextController = {
   }
 };
 
-// 供模板使用的响应式状态
 const isAutoTimerActive = computed(() => autoNextController.active.value);
 const countdown = computed(() => autoNextController.countdown.value);
 
-// ========== 打字机（setTimeout 链 + 唯一 ID 防护）=========
+// ---------- 打字机 ----------
 const typewriterTimer = ref(null);
-let currentTypewriterId = 0; // 全局递增，用于终止旧打字机
+let currentTypewriterId = 0;
 
 const clearTypewriter = () => {
   if (typewriterTimer.value) {
@@ -246,23 +282,24 @@ const clearTypewriter = () => {
     typewriterTimer.value = null;
   }
   isTyping.value = false;
-  // 递增ID，使任何正在进行的打字机回调自动失效
   currentTypewriterId++;
 };
 
 const typeWriter = (text) => {
   return new Promise((resolve) => {
-    clearTypewriter(); // 清理旧打字机
+    clearTypewriter();
     isTyping.value = true;
     displayComment.value = '';
 
-    const typeId = ++currentTypewriterId; // 本次打字机的唯一ID
-    const targetIndex = currentQuestionIndex.value; // 启动时的题目索引
-    const chars = text.split('');
+    // 格式化文本（根据当前容器宽度插入换行）
+    const formattedText = formatCommentByWidth(text);
+
+    const typeId = ++currentTypewriterId;
+    const targetIndex = currentQuestionIndex.value;
+    const chars = formattedText.split('');
     let i = 0;
 
     const addChar = () => {
-      // 校验：是否已被新的打字机覆盖 / 题目已切换
       if (typeId !== currentTypewriterId || targetIndex !== currentQuestionIndex.value) {
         isTyping.value = false;
         resolve();
@@ -284,32 +321,26 @@ const typeWriter = (text) => {
   });
 };
 
-// ========== 自动完成定时器（第五题延迟跳转）=========
+// ---------- 自动完成定时器 ----------
 const autoCompleteTimer = ref(null);
 
 // ---------- 选项选择 ----------
 const onSelect = async (idx) => {
-  // 多重锁：已答、正在打字、自动跳转激活、导航中
   if (isAnswered.value || localAnswered.value || isTyping.value || isNavigating.value) return;
   if (selectedOption.value !== null) return;
 
-  // 立即取消任何待执行的自动跳转
   autoNextController.cancel();
 
-  // 波纹反馈
   rippleIndex.value = idx;
   setTimeout(() => {
     rippleIndex.value = null;
   }, 300);
 
-  // 锁定本地状态
   localAnswered.value = true;
   selectedOption.value = idx;
 
-  // ===== 修复：记录当前索引，防止 store 内部自动前进 =====
   const beforeIndex = currentQuestionIndex.value;
   store.selectAnswer(beforeIndex, idx);
-  // 如果 store 自动修改了索引，立即回退（仅保留答案，不跳题）
   if (store.currentQuestionIndex !== beforeIndex && !isNavigating.value) {
     console.warn('🛑 store 自动跳转已被拦截');
     store.currentQuestionIndex = beforeIndex;
@@ -317,11 +348,9 @@ const onSelect = async (idx) => {
 
   await playSound('select', 0.2);
 
-  // 开始打字机
   const fullComment = currentQuestion.value.comments[idx];
   await typeWriter(fullComment);
 
-  // 打字机结束后：如果是最后一题则延迟完成，否则启动自动跳转
   if (isLastQuestion.value) {
     autoCompleteTimer.value = setTimeout(() => {
       if (!isNavigating.value && selectedOption.value !== null) {
@@ -342,7 +371,7 @@ const skipAutoAndNext = () => {
   }
 };
 
-// ---------- 导航方法（强制步长=1，防重跳）----------
+// ---------- 导航方法 ----------
 const goToNext = () => {
   if (isNavigating.value || isLastQuestion.value || selectedOption.value === null) return;
 
@@ -350,7 +379,6 @@ const goToNext = () => {
   const nextIdx = beforeIdx + 1;
   if (nextIdx >= questions.length) return;
 
-  // 防御：如果目标索引已被其他操作设置，不再重复执行
   if (store.currentQuestionIndex === nextIdx) {
     console.warn('[goToNext] already at target index, skip');
     isNavigating.value = false;
@@ -358,12 +386,11 @@ const goToNext = () => {
   }
 
   isNavigating.value = true;
-  autoNextController.cancel(); // 取消自动跳转
-  clearTypewriter(); // 终止打字机
+  autoNextController.cancel();
+  clearTypewriter();
 
   store.currentQuestionIndex = nextIdx;
 
-  // 延长锁释放时机，确保同一宏任务内无法再次调用
   setTimeout(() => {
     isNavigating.value = false;
   }, 0);
@@ -383,7 +410,6 @@ const goToPrev = () => {
 
 const finishQuiz = () => {
   if (isNavigating.value) return;
-  // 清除自动完成定时器，防止重复调用
   if (autoCompleteTimer.value) {
     clearTimeout(autoCompleteTimer.value);
     autoCompleteTimer.value = null;
@@ -391,44 +417,38 @@ const finishQuiz = () => {
   store.completeQuiz();
 };
 
-// ---------- 监听题目索引变化（重置所有状态 + 跳跃矫正 + 答案残留清理）----------
+// ---------- 监听题目索引变化 ----------
 watch(currentQuestionIndex, async (newIdx, oldIdx) => {
-  // ----- 跳跃矫正：如果索引跨度大于1，强制回退到旧索引+1 -----
   if (oldIdx !== undefined && newIdx - oldIdx > 1) {
     console.warn(`索引跳跃异常: ${oldIdx} → ${newIdx}，已自动修正`);
     store.currentQuestionIndex = oldIdx + 1;
-    return; // 修正后会再次触发 watch，无需继续执行
+    return;
   }
 
-  // 1. 强制终止所有异步任务
   autoNextController.cancel();
   clearTypewriter();
 
-  // 2. 重置本地交互状态
   localAnswered.value = false;
   rippleIndex.value = null;
   isTyping.value = false;
   isNavigating.value = false;
-  displayComment.value = ''; // 立即清空评论
+  displayComment.value = '';
 
-  // 3. 从 store 恢复答案，同时清除历史残留答案
   const saved = answers.value[newIdx];
   selectedOption.value = saved !== null ? saved : null;
 
   if (saved !== null) {
-    // 判断该答案是否为本次会话中刚刚选择的（通过 localAnswered 标记）
     if (!localAnswered.value) {
-      // 不是刚刚选择的 -> 视为脏数据，清除 store 中的答案
       store.$patch((state) => {
         state.answers[newIdx] = null;
       });
       selectedOption.value = null;
       displayComment.value = '';
     } else {
-      // 是刚刚选择的，直接显示完整点评（无打字机效果，不触发自动跳转）
-      localAnswered.value = true; // 保持锁定状态
+      localAnswered.value = true;
       await nextTick();
-      displayComment.value = currentQuestion.value.comments[saved];
+      // 直接显示完整评论，并应用动态换行
+      displayComment.value = formatCommentByWidth(currentQuestion.value.comments[saved]);
     }
   }
 }, {immediate: true});
@@ -440,10 +460,10 @@ const beforeLeave = () => {
   clearTypewriter();
 };
 const afterEnter = () => {
-  // 不需要额外逻辑，状态已在 watch 中恢复
+  // 不需要额外逻辑
 };
 
-// ---------- 组件卸载时完全清理 ----------
+// ---------- 组件卸载时清理 ----------
 onBeforeUnmount(() => {
   autoNextController.cancel();
   clearTypewriter();
