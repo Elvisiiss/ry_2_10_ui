@@ -12,6 +12,12 @@
           <span class="counter mono">{{ currentQuestionIndex + 1 }} / 5</span>
         </div>
 
+        <!-- 卡片头部 -->
+        <div class="question-header">
+          <span class="question-number mono">{{ formattedIndex }}</span>
+          <h3 class="hand-title">{{ currentQuestion.title }}</h3>
+        </div>
+
         <!-- 选项区（手绘单选 + 波纹反馈） -->
         <div class="options">
           <label
@@ -449,7 +455,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style lang="scss" scoped>
-/* ===== 样式部分：完全保持原样，无任何修改 ===== */
+/* ===== 样式部分 ===== */
 // ----- 全局变量后备（确保独立运行）-----
 $color-void: #0a0c0e !default;
 $color-dust: #1a1e24 !default;
@@ -537,7 +543,7 @@ $bp-mobile: 768px !default;
 
 // ---------- 页面入场动画（手绘晕影）----------
 .question-set {
-  height: 600px; // 固定高度，消除卡片高度跳动
+  height: 100vh; /* 使用视口高度，卡片内部滚动可见所有内容 */
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -559,7 +565,8 @@ $bp-mobile: 768px !default;
 
   @media (max-width: $bp-mobile) {
     min-width: auto;
-    padding: 0 12px;
+    padding: 0 4px; // 极小左右外边距，几乎贴边
+    height: 100vh;
   }
 
   .obs-card {
@@ -568,7 +575,7 @@ $bp-mobile: 768px !default;
     position: relative !important; // 覆盖 transition 强加的 absolute
     height: auto; // 由 flex 决定
 
-    // ===== 新增：自定义滚动条样式（手绘感）=====
+    // ===== 自定义滚动条样式（手绘感）=====
     &::-webkit-scrollbar {
       width: 4px;
       background: transparent;
@@ -593,7 +600,7 @@ $bp-mobile: 768px !default;
     scrollbar-width: thin;
     scrollbar-color: $color-heartbeat rgba($color-paper, 0.05);
 
-    // ===== 新增：顶部/底部边缘淡出效果（模拟可滚动提示）=====
+    // ===== 顶部/底部边缘淡出效果（模拟可滚动提示）=====
     &::before {
       content: '';
       position: absolute;
@@ -609,7 +616,7 @@ $bp-mobile: 768px !default;
               transparent 85%,
               rgba($color-void, 0.2) 100%
       );
-      z-index: 1; // 置于内容之上但不影响交互
+      z-index: 1;
     }
   }
 }
@@ -631,7 +638,7 @@ $bp-mobile: 768px !default;
 .progress {
   display: flex;
   align-items: center;
-  margin-bottom: 2rem; // 与卡片内容保持间距
+  margin-bottom: 2rem;
   color: $color-mist;
   font-size: 0.85rem;
   letter-spacing: 0.1em;
@@ -905,11 +912,11 @@ $bp-mobile: 768px !default;
   }
 }
 
-// ========== 核心：从左到右擦除转场（改为透明度+位移，避免高度塌陷）==========
+// ========== 从左到右擦除转场（透明度+位移）==========
 .wipe-enter-active,
 .wipe-leave-active {
   transition: opacity 0.5s $ease-drawer, transform 0.5s $ease-drawer;
-  position: absolute; // 卡片重叠，父容器固定高度保证不塌陷
+  position: absolute;
   width: 100%;
   top: 0;
   left: 0;
@@ -931,21 +938,119 @@ $bp-mobile: 768px !default;
   transform: translateX(0);
 }
 
-// ---------- 移动端适配 ----------
+// ---------- 标题样式 ----------
+.hand-title {
+  font-family: $font-hand;
+  font-size: 1.4rem;
+  font-weight: 400;
+  color: $color-paper;
+  line-height: 1.4;
+  margin: 0.5rem 0 1rem;
+}
+
+// ========== 移动端适配（紧凑设计，极小边距，字体适当缩小）==========
 @media (max-width: $bp-mobile) {
   .obs-card {
-    padding: 1.5rem;
+    padding: 0.5rem 0.3rem; // 左右内边距仅0.3rem，尽可能利用宽度
   }
-  .nav-actions {
-    flex-direction: column;
-    align-items: stretch;
 
-    .obs-button {
-      justify-content: center;
+  .hand-title {
+    font-size: 0.9rem; // 标题进一步缩小
+    margin: 0.2rem 0 0.5rem;
+    line-height: 1.3;
+  }
+
+  .progress {
+    margin-bottom: 0.6rem;
+
+    .label {
+      font-size: 0.6rem;
+    }
+
+    .bar {
+      margin: 0 0.4rem;
+    }
+
+    .counter {
+      font-size: 0.55rem;
+      padding: 0.1rem 0.4rem;
+    }
+  }
+
+  .options {
+    margin-bottom: 0.6rem;
+
+    .hand-radio {
+      padding: 0.3rem 0.2rem; // 选项左右内边距极小
+      margin-bottom: 0.3rem;
+
+      .option-text {
+        font-size: 0.75rem; // 选项文字再小一点，减少换行
+        line-height: 1.3;
+      }
+
+      .radio-custom {
+        width: 14px;
+        height: 14px;
+        margin-right: 6px;
+        top: 1px;
+
+        &::after {
+          width: 6px;
+          height: 6px;
+          top: 3px;
+          left: 3px;
+        }
+      }
+    }
+  }
+
+  .comment-wrapper {
+    margin: 0.6rem 0 0.4rem;
+    padding: 0.4rem 0.5rem; // 评论区内边距也缩小
+
+    .comment-marker {
+      font-size: 0.55rem;
+      top: -0.4rem;
+      padding: 0 0.3rem;
     }
   }
   .comment {
-    font-size: 0.95rem;
+    font-size: 0.75rem; // 评论字体缩小
+    line-height: 1.4;
+  }
+
+  .nav-actions {
+    margin-top: 0.6rem;
+    gap: 0.4rem;
+
+    .obs-button {
+      padding: 0.3rem 0.8rem;
+      font-size: 0.7rem;
+
+      svg {
+        width: 12px;
+        height: 12px;
+      }
+    }
+
+    .auto-hint {
+      padding: 0.15rem 0.6rem;
+      font-size: 0.65rem;
+      gap: 0.2rem;
+
+      .dot-pulse {
+        width: 5px;
+        height: 5px;
+      }
+    }
+  }
+
+  // 滚动条适应移动端
+  .obs-card {
+    &::-webkit-scrollbar {
+      width: 3px;
+    }
   }
 }
 </style>
